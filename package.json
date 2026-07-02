@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-auth",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local Google Antigravity account switcher for the agy CLI.",
   "type": "module",
   "bin": {
@@ -35,6 +35,7 @@
   },
   "homepage": "https://github.com/badaruddinl/agy-auth#readme",
   "dependencies": {
+    "@homebridge/node-pty-prebuilt-multiarch": "^0.13.1",
     "keytar": "^7.9.0"
   },
   "engines": {

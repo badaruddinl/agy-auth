@@ -20,14 +20,48 @@ export function defaultRegistry() {
 }
 
 function normalizeAccount(account) {
+  const email = cleanAccountId(account.email);
+  const accountKey = cleanAccountId(account.accountKey || account.account_key || email);
   return {
-    accountKey: account.accountKey || account.account_key,
-    email: account.email,
+    accountKey,
+    email,
     alias: account.alias || '',
     createdAt: account.createdAt || account.created_at || account.created_at_ms || null,
     importedAt: account.importedAt || account.imported_at || account.last_imported_at_ms || null,
     usedAt: account.usedAt || account.used_at || account.last_used_at_ms || null,
+    usage: account.usage || account.last_usage || null,
+    usageAt: account.usageAt || account.usage_at || account.last_usage_at || null,
   };
+}
+
+function cleanAccountId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const cleaned = raw
+    .replace(/(GEMINI\s+MODELS|CLAUDE\s+AND\s+GPT\s+MODELS).*$/i, '')
+    .replace(/GEMINI$/i, '')
+    .trim();
+  const match = cleaned.match(/^([^\s,]+@[^\s,]+?)(?=GEMINI\s+MODELS|CLAUDE\s+AND\s+GPT\s+MODELS|\s|,|$)/i);
+  return match ? match[1] : cleaned;
+}
+
+function dedupeAccounts(accounts) {
+  const byKey = new Map();
+  for (const account of accounts) {
+    if (!account.accountKey) continue;
+    const previous = byKey.get(account.accountKey);
+    byKey.set(account.accountKey, {
+      ...previous,
+      ...account,
+      alias: previous?.alias || account.alias || '',
+      createdAt: previous?.createdAt || account.createdAt,
+      importedAt: account.importedAt || previous?.importedAt,
+      usedAt: account.usedAt || previous?.usedAt,
+      usage: account.usage || previous?.usage,
+      usageAt: account.usageAt || previous?.usageAt,
+    });
+  }
+  return [...byKey.values()];
 }
 
 export async function readRegistry(registryPath = REGISTRY_PATH) {
@@ -35,7 +69,7 @@ export async function readRegistry(registryPath = REGISTRY_PATH) {
     const raw = await fs.readFile(registryPath, 'utf8');
     const registry = JSON.parse(raw);
     const accounts = Array.isArray(registry.accounts)
-      ? registry.accounts.map(normalizeAccount).filter(account => account.accountKey)
+      ? dedupeAccounts(registry.accounts.map(normalizeAccount).filter(account => account.accountKey))
       : [];
     return {
       ...defaultRegistry(),
@@ -62,6 +96,8 @@ export async function writeRegistry(registry, registryPath = REGISTRY_PATH) {
       created_at: account.createdAt || null,
       imported_at: account.importedAt || null,
       last_used_at: account.usedAt || null,
+      last_usage: account.usage || null,
+      last_usage_at: account.usageAt || null,
     })),
   };
   await fs.writeFile(registryPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');

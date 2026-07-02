@@ -4,6 +4,7 @@ import { printAccounts, printJson } from './format.js';
 import { spawnSync } from 'node:child_process';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { readUsageFromAgy } from './usage.js';
 import {
   deleteSnapshot,
   listSnapshots,
@@ -26,6 +27,8 @@ function help() {
   console.log('  login --device-auth     Use AGY device login if the installed agy supports it');
   console.log('  import [--alias name]   Capture current AGY keyring credential');
   console.log('  list                    List stored auth snapshots');
+  console.log('  list --refresh          Refresh active quota, then list snapshots');
+  console.log('  usage [--json]          Show active account quota and reset time');
   console.log('  switch [<query>]        Switch active AGY auth by email/alias/key');
   console.log('  remove <query|--all>    Remove captured snapshots');
   console.log('  native                  List native AGY keyring entries without secrets');
@@ -100,6 +103,29 @@ async function status(jsonMode) {
     console.log(`registry: ${REGISTRY_PATH}`);
   }
   return email ? 0 : 1;
+}
+
+async function refreshActiveUsage() {
+  const usage = await readUsageFromAgy();
+  const email = usage.accountEmail || await detectActiveAccount();
+  if (!email) return usage;
+
+  const accountKey = slug(email);
+  const registry = await readRegistry();
+  const previous = registry.accounts.find(account => account.accountKey === accountKey);
+  upsertAccount(registry, {
+    accountKey,
+    email,
+    alias: previous?.alias || '',
+    createdAt: previous?.createdAt || new Date().toISOString(),
+    importedAt: previous?.importedAt || null,
+    usedAt: previous?.usedAt || null,
+    usage,
+    usageAt: usage.capturedAt,
+  });
+  if (!registry.activeAccountKey) registry.activeAccountKey = accountKey;
+  await writeRegistry(registry);
+  return usage;
 }
 
 async function captureCurrentAccount(args) {
@@ -203,11 +229,31 @@ async function readListRegistry() {
   };
 }
 
-async function list(jsonMode) {
+async function list(jsonMode, refresh = false) {
+  if (refresh) await refreshActiveUsage();
   const registry = await readListRegistry();
   if (jsonMode) printJson(registry);
   else printAccounts(registry);
   return registry.accounts.length ? 0 : 1;
+}
+
+async function usage(jsonMode) {
+  const usagePayload = await refreshActiveUsage();
+  if (jsonMode) {
+    printJson(usagePayload);
+  } else if (!usagePayload.available) {
+    console.log(usagePayload.error || 'Usage tidak tersedia.');
+  } else {
+    console.log(`Account: ${usagePayload.accountEmail || '-'}`);
+    for (const group of usagePayload.groups) {
+      console.log('');
+      console.log(group.name);
+      console.log(`  Models : ${group.models || '-'}`);
+      console.log(`  Weekly : ${group.weekly.remainingPercent ?? '?'}% remaining${group.weekly.refreshesIn ? ` - reset ${group.weekly.refreshesIn}` : ''}`);
+      console.log(`  5 hour : ${group.fiveHour.remainingPercent ?? '?'}% remaining${group.fiveHour.refreshesIn ? ` - reset ${group.fiveHour.refreshesIn}` : ''}`);
+    }
+  }
+  return usagePayload.available ? 0 : 1;
 }
 
 async function selectAccountInteractively(registry) {
@@ -318,7 +364,8 @@ function config(jsonMode) {
 export async function run(argv) {
   const args = [...argv];
   const jsonMode = args.includes('--json');
-  const filtered = args.filter(arg => arg !== '--json');
+  const refresh = args.includes('--refresh');
+  const filtered = args.filter(arg => arg !== '--json' && arg !== '--refresh');
   const command = filtered[0] || 'help';
   const rest = filtered.slice(1);
 
@@ -333,7 +380,8 @@ export async function run(argv) {
   if (command === 'status') return status(jsonMode);
   if (command === 'login') return login(rest, jsonMode);
   if (command === 'import') return importAccount(rest, jsonMode);
-  if (command === 'list') return list(jsonMode);
+  if (command === 'list') return list(jsonMode, refresh);
+  if (command === 'usage') return usage(jsonMode);
   if (command === 'switch') return switchAccount(rest[0], jsonMode);
   if (command === 'remove') return remove(rest, jsonMode);
   if (command === 'native') return native(jsonMode);

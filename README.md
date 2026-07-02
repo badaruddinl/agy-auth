@@ -16,6 +16,8 @@ Then run:
 agy-auth status
 agy-auth login --alias main
 agy-auth import --alias main
+agy-auth usage
+agy-auth list --refresh
 agy-auth list
 agy-auth switch main
 ```
@@ -45,6 +47,8 @@ agy-auth status
 agy-auth login --alias main
 agy-auth import --alias main
 agy-auth list             # list stored auth snapshots
+agy-auth list --refresh   # refresh active quota, then list
+agy-auth usage            # read active quota from AGY /usage
 agy-auth switch           # choose from the list interactively
 agy-auth switch main      # switch by alias/email/key
 agy-auth remove main
