@@ -4,7 +4,7 @@
   "description": "Local Google Antigravity account switcher for the agy CLI.",
   "type": "module",
   "bin": {
-    "agy-auth": "./bin/agy-auth.js"
+    "agy-auth": "bin/agy-auth.js"
   },
   "files": [
     "bin",
