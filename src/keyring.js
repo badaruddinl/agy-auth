@@ -54,6 +54,10 @@ export async function listNativeAgyCredentials() {
   return keytar.findCredentials(AGY_SERVICE);
 }
 
+export async function listSnapshots() {
+  return keytar.findCredentials(SNAPSHOT_SERVICE);
+}
+
 async function getPasswordWithFindFallback(service, account) {
   const direct = await keytar.getPassword(service, account);
   if (direct) return direct;

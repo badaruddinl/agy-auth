@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-auth",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local Google Antigravity account switcher for the agy CLI.",
   "type": "module",
   "bin": {

@@ -2,8 +2,11 @@ import { VERSION, AGY_ACCOUNT, AGY_SERVICE, REGISTRY_PATH, SNAPSHOT_SERVICE } fr
 import { detectActiveAccount } from './agy.js';
 import { printAccounts, printJson } from './format.js';
 import { spawnSync } from 'node:child_process';
+import readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import {
   deleteSnapshot,
+  listSnapshots,
   listNativeAgyCredentials,
   readAgyCredential,
   readSnapshot,
@@ -22,8 +25,8 @@ function help() {
   console.log('  login [--alias name]    Open agy, then capture the logged-in account');
   console.log('  login --device-auth     Use AGY device login if the installed agy supports it');
   console.log('  import [--alias name]   Capture current AGY keyring credential');
-  console.log('  list                    List captured accounts');
-  console.log('  switch <query>          Restore captured account by email/alias/key');
+  console.log('  list                    List stored auth snapshots');
+  console.log('  switch [<query>]        Switch active AGY auth by email/alias/key');
   console.log('  remove <query|--all>    Remove captured snapshots');
   console.log('  native                  List native AGY keyring entries without secrets');
   console.log('  config                  Show keyring service configuration');
@@ -170,19 +173,70 @@ async function login(args, jsonMode) {
   return 0;
 }
 
-async function list(jsonMode) {
+async function readListRegistry() {
   const registry = await readRegistry();
+  const snapshots = await listSnapshots();
+  const snapshotKeys = new Set(snapshots.map(item => item.account));
+  const accountsByKey = new Map();
+
+  for (const account of registry.accounts) {
+    accountsByKey.set(account.accountKey, {
+      ...account,
+      hasSnapshot: snapshotKeys.has(account.accountKey),
+    });
+  }
+
+  for (const snapshot of snapshots) {
+    if (!accountsByKey.has(snapshot.account)) {
+      accountsByKey.set(snapshot.account, {
+        accountKey: snapshot.account,
+        email: snapshot.account,
+        alias: '',
+        hasSnapshot: true,
+      });
+    }
+  }
+
+  return {
+    ...registry,
+    accounts: [...accountsByKey.values()].sort((a, b) => String(a.email || a.accountKey).localeCompare(String(b.email || b.accountKey))),
+  };
+}
+
+async function list(jsonMode) {
+  const registry = await readListRegistry();
   if (jsonMode) printJson(registry);
   else printAccounts(registry);
   return registry.accounts.length ? 0 : 1;
 }
 
+async function selectAccountInteractively(registry) {
+  if (!process.stdin.isTTY || !process.stdout.isTTY) return null;
+  printAccounts(registry);
+  const rl = readline.createInterface({ input, output });
+  try {
+    const answer = await rl.question('Pilih nomor akun untuk switch: ');
+    const index = Number.parseInt(answer.trim(), 10);
+    if (!Number.isInteger(index) || index < 1 || index > registry.accounts.length) return null;
+    return registry.accounts[index - 1];
+  } finally {
+    rl.close();
+  }
+}
+
 async function switchAccount(query, jsonMode) {
   if (!query) {
-    await list(jsonMode);
-    return 1;
+    const registry = await readListRegistry();
+    if (jsonMode || !process.stdin.isTTY || !process.stdout.isTTY) {
+      if (jsonMode) printJson({ ok: false, error: 'Switch query is required in non-interactive mode.', accounts: registry.accounts });
+      else printAccounts(registry);
+      return 1;
+    }
+    const selected = await selectAccountInteractively(registry);
+    if (!selected) return 1;
+    query = selected.accountKey;
   }
-  const registry = await readRegistry();
+  const registry = await readListRegistry();
   const { account, matches } = findAccount(registry, query);
   if (matches.length > 1) {
     if (jsonMode) printJson({ ok: false, error: 'Query matched multiple accounts.', matches });

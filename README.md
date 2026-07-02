@@ -44,8 +44,9 @@ The registry at `~/.gemini/antigravity-cli/accounts/registry.json` stores only m
 agy-auth status
 agy-auth login --alias main
 agy-auth import --alias main
-agy-auth list
-agy-auth switch main
+agy-auth list             # list stored auth snapshots
+agy-auth switch           # choose from the list interactively
+agy-auth switch main      # switch by alias/email/key
 agy-auth remove main
 agy-auth native
 agy-auth config
