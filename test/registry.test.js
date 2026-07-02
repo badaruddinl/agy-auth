@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { extractAccountEmail } from '../src/agy.js';
 import { internals } from '../src/cli.js';
+import { formatLastRefresh, formatUsageColumns } from '../src/format.js';
 import { readRegistry } from '../src/registry.js';
 import { parseUsageOutput } from '../src/usage.js';
 
@@ -113,4 +114,33 @@ test('dedupes registry accounts with TUI heading suffix', async () => {
   assert.equal(registry.accounts[0].accountKey, 'writer@example.com');
   assert.equal(registry.accounts[0].alias, 'main');
   assert.equal(registry.accounts[0].usage.available, true);
+});
+
+test('formats list usage columns', () => {
+  const usage = parseUsageOutput(`
+    Account: writer@example.com
+    GEMINI MODELS
+      Models within this group: Gemini Flash, Gemini Pro
+      Weekly Limit
+        89% remaining · Refreshes in 118h 40m
+      Five Hour Limit
+        98% remaining · Refreshes in 1h 51m
+    CLAUDE AND GPT MODELS
+      Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+      Weekly Limit
+        66% remaining · Refreshes in 120h 1m
+      Five Hour Limit
+        Quota available
+  `);
+
+  const columns = formatUsageColumns(usage);
+
+  assert.equal(columns.geminiFiveHour, '98% (1h 51m)');
+  assert.equal(columns.geminiWeekly, '89% (118h 40m)');
+  assert.equal(columns.otherFiveHour, '100%');
+  assert.equal(columns.otherWeekly, '66% (120h 1m)');
+});
+
+test('formats recent refresh timestamp', () => {
+  assert.equal(formatLastRefresh(new Date().toISOString()), 'Now');
 });
