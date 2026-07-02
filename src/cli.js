@@ -4,7 +4,9 @@ import { printAccounts, printJson } from './format.js';
 import { spawnSync } from 'node:child_process';
 import { readUsageFromAgy } from './usage.js';
 import {
+  deleteAgyCredential,
   deleteSnapshot,
+  KeyringError,
   listSnapshots,
   listNativeAgyCredentials,
   readAgyCredential,
@@ -154,13 +156,31 @@ async function login(args, jsonMode) {
     return 2;
   }
 
-  if (!jsonMode) {
-    console.log('Opening AGY sign-in flow. Exit AGY after sign-in so agy-auth can save the session.');
+  let previousSecret = null;
+  try {
+    previousSecret = await readAgyCredential();
+    await deleteAgyCredential();
+  } catch (error) {
+    if (!(error instanceof KeyringError)) throw error;
   }
+
+  if (!jsonMode) console.log('Opening AGY sign-in flow. Exit AGY after sign-in so agy-auth can save the session.');
   const result = spawnAgy({ stdio: 'inherit' });
-  if (result.error) throw result.error;
-  if (result.status !== 0) return result.status || 1;
-  return captureAccount(args, jsonMode);
+  if (result.error) {
+    if (previousSecret) await writeAgyCredential(previousSecret);
+    throw result.error;
+  }
+  if (result.status !== 0) {
+    if (previousSecret) await writeAgyCredential(previousSecret);
+    return result.status || 1;
+  }
+
+  try {
+    return await captureAccount(args, jsonMode);
+  } catch (error) {
+    if (previousSecret) await writeAgyCredential(previousSecret);
+    throw error;
+  }
 }
 
 async function readListRegistry() {

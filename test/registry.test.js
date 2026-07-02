@@ -6,7 +6,7 @@ import test from 'node:test';
 import { extractAccountEmail } from '../src/agy.js';
 import { internals } from '../src/cli.js';
 import { formatLastRefresh, formatResetAt, formatUsageColumns, parseRefreshDuration, printAccounts } from '../src/format.js';
-import { readRegistry } from '../src/registry.js';
+import { readRegistry, upsertAccount } from '../src/registry.js';
 import { parseUsageOutput } from '../src/usage.js';
 
 test('extracts latest AGY account email from logs', () => {
@@ -114,6 +114,31 @@ test('dedupes registry accounts with TUI heading suffix', async () => {
   assert.equal(registry.accounts[0].accountKey, 'writer@example.com');
   assert.equal(registry.accounts[0].alias, 'main');
   assert.equal(registry.accounts[0].usage.available, true);
+});
+
+test('upserts same email account instead of duplicating it', () => {
+  const registry = {
+    activeAccountKey: 'writer@example.com',
+    accounts: [
+      {
+        accountKey: 'writer@example.com',
+        email: 'writer@example.com',
+        alias: 'main',
+        importedAt: 'first',
+      },
+    ],
+  };
+
+  upsertAccount(registry, {
+    accountKey: 'writer@example.com',
+    email: 'writer@example.com',
+    alias: 'updated',
+    importedAt: 'second',
+  });
+
+  assert.equal(registry.accounts.length, 1);
+  assert.equal(registry.accounts[0].alias, 'updated');
+  assert.equal(registry.accounts[0].importedAt, 'second');
 });
 
 test('formats list usage columns', () => {

@@ -30,7 +30,7 @@ service: gemini:antigravity
 account: antigravity
 ```
 
-`agy-auth login` runs `agy`, lets AGY complete sign-in, then reads the resulting active session credential and saves a copy under:
+`agy-auth login` temporarily clears the active AGY credential, runs `agy`, lets AGY complete sign-in, then reads the resulting active session credential and saves a copy under:
 
 ```text
 service: agy-auth
@@ -55,7 +55,9 @@ agy-auth native
 agy-auth config
 ```
 
-`agy-auth login` is the primary command for first login. It opens the normal `agy` flow. AGY shows its own sign-in state, for example `You are currently not signed in` followed by `Signing in...`. Exit AGY after sign-in; then `agy-auth` saves the resulting session snapshot.
+`agy-auth login` is the primary command for first login or adding another account. It opens the normal `agy` flow. AGY shows its own sign-in state, including the login method chooser, browser OAuth page, and authorization-code paste prompt when needed. Exit AGY after sign-in; then `agy-auth` saves the resulting session snapshot.
+
+This does not replace existing `agy-auth` snapshots. Existing saved sessions remain in `agy-auth list` and can still be selected with `agy-auth switch <alias|email|key>`. If AGY login fails or is cancelled before a new credential is written, `agy-auth` restores the previously active credential.
 
 Current tested AGY builds do not expose a native `login` or `--device-auth` subcommand in `agy --help`, so `agy-auth login` runs plain `agy` and captures the session after AGY exits.
 

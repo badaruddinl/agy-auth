@@ -1,4 +1,5 @@
 import keytar from 'keytar';
+import { spawnSync } from 'node:child_process';
 import { AGY_ACCOUNT, AGY_SERVICE, SNAPSHOT_SERVICE } from './constants.js';
 import { writeWindowsGenericCredential } from './windows-keyring.js';
 
@@ -26,6 +27,15 @@ export async function writeAgyCredential(secret) {
     return;
   }
   await keytar.setPassword(AGY_SERVICE, AGY_ACCOUNT, secret);
+}
+
+export async function deleteAgyCredential() {
+  if (process.platform === 'win32') {
+    const result = await keytar.deletePassword(AGY_SERVICE, AGY_ACCOUNT);
+    if (result) return true;
+    return deleteWindowsGenericCredential(AGY_SERVICE);
+  }
+  return keytar.deletePassword(AGY_SERVICE, AGY_ACCOUNT);
 }
 
 export async function saveSnapshot(accountKey, secret) {
@@ -63,4 +73,18 @@ async function getPasswordWithFindFallback(service, account) {
   if (direct) return direct;
   const credentials = await keytar.findCredentials(service);
   return credentials.find(item => item.account === account)?.password || null;
+}
+
+function deleteWindowsGenericCredential(targetName) {
+  const result = spawnCmdkeyDelete(targetName);
+  if (result.status === 0) return true;
+  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
+  return /not found|cannot find|Element not found/i.test(output);
+}
+
+function spawnCmdkeyDelete(targetName) {
+  return spawnSync('cmdkey.exe', [`/delete:${targetName}`], {
+    encoding: 'utf8',
+    windowsHide: true,
+  });
 }
