@@ -1,7 +1,7 @@
 import { VERSION, AGY_ACCOUNT, AGY_SERVICE, REGISTRY_PATH, SNAPSHOT_SERVICE } from './constants.js';
 import { detectActiveAccount } from './agy.js';
 import { printAccounts, printJson } from './format.js';
-import { spawnSync } from 'node:child_process';
+import { runAgyNativeLogin } from './agy-login.js';
 import { readUsageFromAgy } from './usage.js';
 import {
   deleteAgyCredential,
@@ -24,12 +24,15 @@ function help() {
   console.log('Commands:');
   console.log('  status                  Show active AGY account and registry status');
   console.log('  login [--alias name]    Run AGY sign-in, then save the resulting session');
+  console.log('  login --oauth           Use Google OAuth login method (default)');
+  console.log('  login --cloud-project   Use Google Cloud project login method');
   console.log('  capture [--alias name]  Capture the currently active AGY session');
   console.log('  import [--alias name]   Alias for capture');
   console.log('  list                    List stored auth snapshots');
-  console.log('  list --refresh          Refresh active quota, then list snapshots');
+  console.log('  list --refresh          Refresh quota for all snapshots, then list');
   console.log('  usage [--json]          Show active account quota and reset time');
   console.log('  switch <query>          Switch active AGY session by email/alias/key');
+  console.log('  verify                  Verify agy-auth active account matches native agy');
   console.log('  remove <query|--all>    Remove captured snapshots');
   console.log('  native                  List native AGY keyring entries without secrets');
   console.log('  config                  Show keyring service configuration');
@@ -48,19 +51,25 @@ function parseAlias(args) {
   return args[index + 1];
 }
 
-function spawnAgy(options = {}) {
-  if (process.platform === 'win32') {
-    return spawnSync('cmd.exe', ['/d', '/s', '/c', 'agy'], {
-      ...options,
-      windowsHide: options.stdio === 'inherit' ? false : true,
-    });
-  }
-  return spawnSync('agy', [], options);
+function parseLoginMethod(args) {
+  const wantsOauth = args.includes('--oauth');
+  const wantsCloudProject = args.includes('--cloud-project') || args.includes('--gcp') || args.includes('--google-cloud-project');
+  if (wantsOauth && wantsCloudProject) throw new Error('Choose only one login method: --oauth or --cloud-project.');
+  return wantsCloudProject ? 'cloud-project' : 'oauth';
+}
+
+function stripLoginMethodArgs(args) {
+  return args.filter(arg => !['--oauth', '--cloud-project', '--gcp', '--google-cloud-project'].includes(arg));
+}
+
+function sameEmail(left, right) {
+  return Boolean(left && right) && String(left).toLowerCase() === String(right).toLowerCase();
 }
 
 async function status(jsonMode) {
   const registry = await readRegistry();
-  const email = await detectActiveAccount();
+  const activeAccount = registry.accounts.find(account => account.accountKey === registry.activeAccountKey);
+  const email = activeAccount?.email || await detectActiveAccount();
   const payload = {
     version: VERSION,
     activeAccountEmail: email,
@@ -106,9 +115,49 @@ async function refreshActiveUsage() {
   return usage;
 }
 
-async function captureCurrentAccount(args) {
+async function refreshUsageForAccount(registry, account) {
+  const secret = await readSnapshot(account.accountKey);
+  await writeAgyCredential(secret);
+  const usage = await readUsageFromAgy();
+  const usageEmail = usage.accountEmail || account.email;
+  const accountKey = account.accountKey;
+  const previous = registry.accounts.find(item => item.accountKey === accountKey);
+  upsertAccount(registry, {
+    ...previous,
+    accountKey,
+    email: previous?.email || usageEmail || account.email || accountKey,
+    alias: previous?.alias || account.alias || '',
+    createdAt: previous?.createdAt || account.createdAt || new Date().toISOString(),
+    importedAt: previous?.importedAt || account.importedAt || null,
+    usedAt: previous?.usedAt || account.usedAt || null,
+    usage,
+    usageAt: usage.capturedAt,
+  });
+  return usage;
+}
+
+async function refreshAllUsage() {
+  const registry = await readRegistry();
+  const activeKey = registry.activeAccountKey;
+  const fallbackSecret = await readAgyCredential().catch(error => {
+    if (error instanceof KeyringError) return null;
+    throw error;
+  });
+  const snapshots = await listSnapshots();
+  const snapshotKeys = new Set(snapshots.map(snapshot => snapshot.account));
+  const accounts = registry.accounts.filter(account => snapshotKeys.has(account.accountKey));
+
+  for (const account of accounts) {
+    await refreshUsageForAccount(registry, account);
+    await writeRegistry(registry);
+  }
+
+  await restoreActiveSession(activeKey, fallbackSecret);
+}
+
+async function captureCurrentAccount(args, emailOverride = '') {
   const alias = parseAlias(args);
-  const email = await detectActiveAccount();
+  const email = emailOverride || await detectActiveAccount();
   if (!email) {
     throw new Error(
       'Active AGY email was not detected. Sign in with AGY outside agy-auth, '
@@ -134,8 +183,8 @@ async function captureCurrentAccount(args) {
   return account;
 }
 
-async function captureAccount(args, jsonMode) {
-  const account = await captureCurrentAccount(args);
+async function captureAccount(args, jsonMode, emailOverride = '') {
+  const account = await captureCurrentAccount(args, emailOverride);
   if (jsonMode) printJson({ ok: true, account, registryPath: REGISTRY_PATH });
   else console.log(`Captured AGY session: ${account.email}`);
   return 0;
@@ -156,37 +205,98 @@ async function login(args, jsonMode) {
     return 2;
   }
 
+  const loginMethod = parseLoginMethod(args);
+  const captureArgs = stripLoginMethodArgs(args);
+  const previousRegistry = await readRegistry();
+  const previousActiveKey = previousRegistry.activeAccountKey || null;
   let previousSecret = null;
   try {
     previousSecret = await readAgyCredential();
     await deleteAgyCredential();
+    await assertAgyCredentialCleared();
   } catch (error) {
     if (!(error instanceof KeyringError)) throw error;
   }
 
-  if (!jsonMode) console.log('Opening AGY sign-in flow. Exit AGY after sign-in so agy-auth can save the session.');
-  const result = spawnAgy({ stdio: 'inherit' });
-  if (result.error) {
-    if (previousSecret) await writeAgyCredential(previousSecret);
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    if (previousSecret) await writeAgyCredential(previousSecret);
-    return result.status || 1;
-  }
-
+  if (!jsonMode) console.log('Starting native agy-auth login...');
+  let loginResult = null;
   try {
-    return await captureAccount(args, jsonMode);
+    loginResult = await runAgyNativeLogin({ method: loginMethod });
   } catch (error) {
     if (previousSecret) await writeAgyCredential(previousSecret);
     throw error;
+  }
+
+  try {
+    const account = await captureCurrentAccount(captureArgs, loginResult?.email || '');
+    await restoreActiveSession(previousActiveKey, previousSecret);
+    if (jsonMode) printJson({
+      ok: true,
+      account,
+      registryPath: REGISTRY_PATH,
+      activeAccountKey: previousActiveKey || account.accountKey,
+      activeSessionPreserved: Boolean(previousSecret && previousActiveKey),
+    });
+    else {
+      console.log(`Captured AGY session: ${account.email}`);
+      if (previousSecret && previousActiveKey) console.log('Active AGY session preserved. Use `agy-auth switch` to activate the new session.');
+    }
+    return 0;
+  } catch (error) {
+    await restoreActiveSession(previousActiveKey, previousSecret);
+    throw error;
+  }
+}
+
+async function assertAgyCredentialCleared() {
+  try {
+    await readAgyCredential();
+  } catch (error) {
+    if (error instanceof KeyringError) return;
+    throw error;
+  }
+  throw new Error('Failed to clear the active AGY credential before login. Refusing to continue because it could capture the old session.');
+}
+
+async function restoreActiveRegistryKey(activeAccountKey) {
+  if (!activeAccountKey) return;
+  const registry = await readRegistry();
+  if (registry.accounts.some(account => account.accountKey === activeAccountKey)) {
+    registry.activeAccountKey = activeAccountKey;
+    await writeRegistry(registry);
+  }
+}
+
+async function restoreActiveSession(activeAccountKey, fallbackSecret = null) {
+  if (activeAccountKey) {
+    try {
+      const activeSecret = await readSnapshot(activeAccountKey);
+      await writeAgyCredential(activeSecret);
+      await assertActiveCredentialMatches(activeAccountKey);
+      await restoreActiveRegistryKey(activeAccountKey);
+      return;
+    } catch (error) {
+      if (!(error instanceof KeyringError)) throw error;
+    }
+  }
+  if (fallbackSecret) await writeAgyCredential(fallbackSecret);
+}
+
+async function assertActiveCredentialMatches(accountKey) {
+  const [snapshotSecret, activeSecret] = await Promise.all([
+    readSnapshot(accountKey),
+    readAgyCredential(),
+  ]);
+  if (snapshotSecret !== activeSecret) {
+    throw new Error(`Active AGY credential did not match selected snapshot: ${accountKey}`);
   }
 }
 
 async function readListRegistry() {
   const registry = await readRegistry();
   const snapshots = await listSnapshots();
-  const activeEmail = await detectActiveAccount();
+  const activeAccount = registry.accounts.find(account => account.accountKey === registry.activeAccountKey);
+  const activeEmail = activeAccount?.email || await detectActiveAccount();
   const snapshotKeys = new Set(snapshots.map(item => item.account));
   const accountsByKey = new Map();
 
@@ -233,7 +343,7 @@ async function readListRegistry() {
 }
 
 async function list(jsonMode, refresh = false) {
-  if (refresh) await refreshActiveUsage();
+  if (refresh) await refreshAllUsage();
   const registry = await readListRegistry();
   if (jsonMode) printJson(registry);
   else printAccounts(registry);
@@ -285,6 +395,7 @@ async function switchAccount(query, jsonMode) {
 
   const secret = await readSnapshot(account.accountKey);
   await writeAgyCredential(secret);
+  await assertActiveCredentialMatches(account.accountKey);
   account.usedAt = new Date().toISOString();
   registry.activeAccountKey = account.accountKey;
   upsertAccount(registry, account);
@@ -296,6 +407,71 @@ async function switchAccount(query, jsonMode) {
     console.log('AGY CLI/App will load this credential as the active session.');
   }
   return 0;
+}
+
+async function verify(jsonMode) {
+  const registry = await readRegistry();
+  const activeAccount = registry.accounts.find(account => account.accountKey === registry.activeAccountKey);
+  if (!activeAccount) {
+    const payload = {
+      ok: false,
+      error: 'No active account is selected in agy-auth.',
+      activeAccountKey: registry.activeAccountKey || null,
+    };
+    if (jsonMode) printJson(payload);
+    else console.log(payload.error);
+    return 1;
+  }
+
+  let credentialMatches = false;
+  try {
+    await assertActiveCredentialMatches(activeAccount.accountKey);
+    credentialMatches = true;
+  } catch (error) {
+    const payload = {
+      ok: false,
+      error: error.message,
+      activeAccountEmail: activeAccount.email,
+      activeAccountKey: activeAccount.accountKey,
+      credentialMatches: false,
+      nativeAgyEmail: null,
+      nativeAgyMatches: false,
+    };
+    if (jsonMode) printJson(payload);
+    else {
+      console.log(`agy-auth active : ${activeAccount.email}`);
+      console.log('active credential: mismatch');
+      console.log(`error           : ${error.message}`);
+    }
+    return 2;
+  }
+
+  const usagePayload = await readUsageFromAgy();
+  const nativeEmail = usagePayload.accountEmail || '';
+  const nativeAgyMatches = sameEmail(nativeEmail, activeAccount.email);
+  const payload = {
+    ok: credentialMatches && nativeAgyMatches,
+    activeAccountEmail: activeAccount.email,
+    activeAccountKey: activeAccount.accountKey,
+    credentialMatches,
+    nativeAgyEmail: nativeEmail || null,
+    nativeAgyMatches,
+    appCredentialSource: `${AGY_SERVICE}/${AGY_ACCOUNT}`,
+    appNote: 'Antigravity App uses this active credential on a fresh session; restart/reload the app if it was already open before switching.',
+  };
+
+  if (jsonMode) {
+    printJson(payload);
+  } else {
+    console.log(`agy-auth active : ${payload.activeAccountEmail}`);
+    console.log(`active credential: ${payload.credentialMatches ? 'matches selected snapshot' : 'mismatch'}`);
+    console.log(`native agy      : ${payload.nativeAgyEmail || '-'}`);
+    console.log(`native match    : ${payload.nativeAgyMatches ? 'yes' : 'no'}`);
+    console.log(`app credential  : ${payload.appCredentialSource}`);
+    console.log('app note        : restart/reload Antigravity App if it was already open before switching.');
+  }
+
+  return payload.ok ? 0 : 2;
 }
 
 async function remove(args, jsonMode) {
@@ -371,6 +547,7 @@ export async function run(argv) {
   if (command === 'list') return list(jsonMode, refresh);
   if (command === 'usage') return usage(jsonMode);
   if (command === 'switch') return switchAccount(rest[0], jsonMode);
+  if (command === 'verify') return verify(jsonMode);
   if (command === 'remove') return remove(rest, jsonMode);
   if (command === 'native') return native(jsonMode);
   if (command === 'config') return config(jsonMode);
@@ -384,6 +561,9 @@ export const internals = {
   defaultRegistry,
   findAccount,
   parseAlias,
+  parseLoginMethod,
+  sameEmail,
+  stripLoginMethodArgs,
   slug,
   upsertAccount,
 };

@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { extractAccountEmail } from '../src/agy.js';
+import { internals as loginInternals } from '../src/agy-login.js';
 import { internals } from '../src/cli.js';
 import { formatLastRefresh, formatResetAt, formatUsageColumns, parseRefreshDuration, printAccounts } from '../src/format.js';
 import { readRegistry, upsertAccount } from '../src/registry.js';
@@ -40,6 +41,94 @@ test('parses import alias', () => {
 
 test('agy-auth capture is a local session manager command', () => {
   assert.equal(typeof internals.parseAlias, 'function');
+});
+
+test('matches active AGY account emails case-insensitively', () => {
+  assert.equal(internals.sameEmail('Writer@Example.com', 'writer@example.com'), true);
+  assert.equal(internals.sameEmail('writer@example.com', 'other@example.com'), false);
+  assert.equal(internals.sameEmail('', 'writer@example.com'), false);
+});
+
+test('parses agy-auth login method flags', () => {
+  assert.equal(internals.parseLoginMethod([]), 'oauth');
+  assert.equal(internals.parseLoginMethod(['--oauth']), 'oauth');
+  assert.equal(internals.parseLoginMethod(['--cloud-project']), 'cloud-project');
+  assert.equal(internals.parseLoginMethod(['--gcp']), 'cloud-project');
+  assert.deepEqual(internals.stripLoginMethodArgs(['--cloud-project', '--alias', 'main']), ['--alias', 'main']);
+  assert.throws(() => internals.parseLoginMethod(['--oauth', '--cloud-project']), /Choose only one login method/);
+});
+
+test('parses native AGY login OAuth output', () => {
+  const output = `
+    Your browser should open automatically. If not:
+    https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=abc
+    &code_challenge=xyz&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback
+
+    If you aren't automatically redirected, paste the authorization code below:
+    authorization code...
+  `;
+
+  const url = loginInternals.extractGoogleAuthUrl(output);
+
+  assert.equal(url, 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=abc&code_challenge=xyz&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback');
+});
+
+test('parses wrapped native AGY OAuth URL output', () => {
+  const output = `
+    https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h211cre235vtolojh4g403ep
+    .apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5
+    GLVhiFMpkdiEHtd8st0&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback
+
+    If you aren't automatically redirected, paste the authorization code below:
+  `;
+
+  assert.equal(loginInternals.extractGoogleAuthUrl(output), 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h211cre235vtolojh4g403ep.apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5GLVhiFMpkdiEHtd8st0&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback');
+});
+
+test('preserves OAuth URL from terminal hyperlink escape output', () => {
+  const raw = '\u001b]8;;https://accounts.google.com/o/oauth2/auth?client_id=abc&code_challenge=xyz\u0007Open link\u001b]8;;\u0007';
+  const cleaned = loginInternals.cleanTerminal(raw);
+
+  assert.equal(loginInternals.extractGoogleAuthUrl(cleaned), 'https://accounts.google.com/o/oauth2/auth?client_id=abc&code_challenge=xyz');
+});
+
+test('formats OAuth URL as terminal hyperlink when TTY is available', () => {
+  const original = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+  Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+  try {
+    assert.equal(
+      loginInternals.formatTerminalLink('https://accounts.google.com/o/oauth2/auth?client_id=abc', 'Open AGY OAuth login'),
+      '\u001b]8;;https://accounts.google.com/o/oauth2/auth?client_id=abc\u0007Open AGY OAuth login\u001b]8;;\u0007',
+    );
+  } finally {
+    if (original) Object.defineProperty(process.stdout, 'isTTY', original);
+  }
+});
+
+test('detects native AGY signed-in state from parsed terminal output', () => {
+  assert.equal(loginInternals.isSignedIn(`
+    Antigravity CLI 1.0.15
+    writer@example.com
+    Gemini 3.1 Pro (High)
+  `), true);
+});
+
+test('extracts signed-in email from latest native AGY login output', () => {
+  assert.equal(loginInternals.extractSignedInEmail(`
+    Antigravity CLI 1.0.15
+    old@example.com
+    authorization code...
+    Antigravity CLI 1.0.15
+    new@example.com
+    Gemini 3.1 Pro (High)
+  `), 'new@example.com');
+});
+
+test('extracts AGY authorization code from login output', () => {
+  assert.equal(loginInternals.extractAuthorizationCode(`
+    If you aren't automatically redirected, paste the authorization code below:
+    4/0AdkVLPxMUWqkPAF9PMTQqTQXej-jVUT75pLdS82gRGdY
+  `), '4/0AdkVLPxMUWqkPAF9PMTQqTQXej-jVUT75pLdS82gRGdY');
 });
 
 test('parses AGY usage output', () => {
