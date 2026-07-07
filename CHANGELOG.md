@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.22 - 2026-07-07
+
+### Fixed
+
+- Corrected `agy-authx login --cloud-project` to match AGY's GCP OAuth flow, storing `auth_method: "gcp"` and saving the selected project/location in AGY settings.
+
 ## 0.1.21 - 2026-07-07
 
 ### Fixed
