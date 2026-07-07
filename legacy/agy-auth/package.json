@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-auth",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Compatibility bridge package for @badaruddinl/agy-authx.",
   "type": "module",
   "bin": {
