@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## 0.1.17 - Unreleased
+## 0.1.17 - 2026-07-07
 
 ### Fixed
 
@@ -12,6 +12,7 @@ All notable changes to this project are documented here.
 
 - `@badaruddinl/agy-authx` now exposes only the `agy-authx` command. The legacy `agy-auth` command is reserved for the final bridge release of `@badaruddinl/agy-auth`.
 - Shortened successful switch output to `switched to <account>`.
+- Removed outdated wording from CLI output, errors, tests, and documentation.
 
 ### Added
 
@@ -61,12 +62,12 @@ All notable changes to this project are documented here.
 
 ### Changed
 
-- Removed npm native runtime dependencies for lighter global installs.
+- Removed npm compiled runtime dependencies for lighter global installs.
 - Replaced `keytar` usage with operating-system keyring tools:
   - Windows Credential Manager through PowerShell and WinCred.
   - macOS Keychain through the built-in `security` command.
   - Linux Secret Service through `secret-tool`.
-- Replaced native PTY dependency usage with Node child processes.
+- Replaced PTY dependency usage with Node child processes.
 - Made `agy-auth list` adaptive for narrow terminals and kept each account on one row.
 
 ### Added

@@ -10,7 +10,7 @@ Install package `@badaruddinl/agy-authx`, then run the `agy-authx` command. `agy
 npm install -g @badaruddinl/agy-authx
 ```
 
-The package has no npm runtime dependencies and no native addon install step.
+The package has no npm runtime dependencies and no compiled addon install step.
 
 Installing `@badaruddinl/agy-authx` exposes one command:
 
@@ -94,7 +94,7 @@ For Antigravity App, the selected account is guaranteed at the shared credential
 
 ## Keyring Requirements
 
-This package stores credentials through the operating-system keyring without npm native addons:
+This package stores credentials through the operating-system keyring without npm compiled addons:
 
 - Windows: Credential Manager, accessed through PowerShell and the WinCred API.
 - macOS: Keychain, accessed through the built-in `security` command.

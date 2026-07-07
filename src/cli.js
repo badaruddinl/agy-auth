@@ -1,7 +1,7 @@
 import { VERSION, AGY_ACCOUNT, AGY_SERVICE, REGISTRY_PATH } from './constants.js';
 import { detectActiveAccount } from './agy.js';
 import { printAccounts, printJson } from './format.js';
-import { runAgyNativeLogin } from './agy-login.js';
+import { runAgyLogin } from './agy-login.js';
 import { readUsageFromAgy } from './usage.js';
 import {
   deleteAgyCredential,
@@ -31,7 +31,7 @@ function help() {
   console.log('  usage [--json]          Show active account quota and reset time');
   console.log('  switch <query>          Switch active AGY session by list id/email/alias/key');
   console.log('  set alias <query> to <alias>');
-  console.log('  verify                  Verify agy-authx active account matches native agy');
+  console.log('  verify                  Verify agy-authx active account matches agy');
   console.log('  remove <query|--all>    Remove saved snapshots');
   console.log('  --version, -V           Show version');
   console.log('');
@@ -223,10 +223,10 @@ async function login(args, jsonMode) {
     if (!(error instanceof KeyringError)) throw error;
   }
 
-  if (!jsonMode) console.log('Starting native agy-authx login...');
+  if (!jsonMode) console.log('Starting agy-authx login...');
   let loginResult = null;
   try {
-    loginResult = await runAgyNativeLogin({ method: loginMethod });
+    loginResult = await runAgyLogin({ method: loginMethod });
   } catch (error) {
     if (previousSecret) await writeAgyCredential(previousSecret);
     throw error;
@@ -541,8 +541,8 @@ async function verify(jsonMode) {
       activeAccountKey: activeAccount.accountKey,
       credentialMatches: false,
       activeCredentialRepaired: false,
-      nativeAgyEmail: null,
-      nativeAgyMatches: false,
+      agyEmail: null,
+      agyMatches: false,
     };
     if (jsonMode) printJson(payload);
     else {
@@ -554,17 +554,17 @@ async function verify(jsonMode) {
   }
 
   const usagePayload = await readUsageFromAgy();
-  const nativeEmail = usagePayload.accountEmail || '';
-  const nativeAgyMatches = sameEmail(nativeEmail, activeAccount.email);
-  if (nativeAgyMatches) await saveActiveCredentialSnapshot(activeAccount.accountKey);
+  const agyEmail = usagePayload.accountEmail || '';
+  const agyMatches = sameEmail(agyEmail, activeAccount.email);
+  if (agyMatches) await saveActiveCredentialSnapshot(activeAccount.accountKey);
   const payload = {
-    ok: sync.matched && nativeAgyMatches,
+    ok: sync.matched && agyMatches,
     activeAccountEmail: activeAccount.email,
     activeAccountKey: activeAccount.accountKey,
     credentialMatches: sync.matched,
     activeCredentialRepaired: sync.repaired,
-    nativeAgyEmail: nativeEmail || null,
-    nativeAgyMatches,
+    agyEmail: agyEmail || null,
+    agyMatches,
     appCredentialSource: `${AGY_SERVICE}/${AGY_ACCOUNT}`,
     appNote: 'Antigravity App uses this active credential on a fresh session; restart/reload the app if it was already open before switching.',
   };
@@ -577,8 +577,8 @@ async function verify(jsonMode) {
       ? 'repaired from selected snapshot'
       : 'matches selected snapshot';
     console.log(`active credential: ${credentialState}`);
-    console.log(`native agy      : ${payload.nativeAgyEmail || '-'}`);
-    console.log(`native match    : ${payload.nativeAgyMatches ? 'yes' : 'no'}`);
+    console.log(`agy             : ${payload.agyEmail || '-'}`);
+    console.log(`agy match       : ${payload.agyMatches ? 'yes' : 'no'}`);
     console.log(`app credential  : ${payload.appCredentialSource}`);
     console.log('app note        : restart/reload Antigravity App if it was already open before switching.');
   }

@@ -9,7 +9,7 @@ const OSC_PATTERN = /\x1b\]([^\x07]*)(\x07|\x1b\\)/g;
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const AUTH_CODE_PATTERN = /\b4\/[A-Za-z0-9_-]{20,}\b/;
 
-export async function runAgyNativeLogin(options = {}) {
+export async function runAgyLogin(options = {}) {
   const method = normalizeLoginMethod(options.method);
   const startedAt = Date.now();
   return new Promise((resolve, reject) => {
@@ -112,7 +112,7 @@ export async function runAgyNativeLogin(options = {}) {
   });
 }
 
-export function readNativeAgyAccount({ timeoutMs = 15000 } = {}) {
+export function readAgyAccount({ timeoutMs = 15000 } = {}) {
   return new Promise((resolve, reject) => {
     const terminal = spawnAgyProcess();
     let buffer = '';
@@ -150,7 +150,7 @@ export function readNativeAgyAccount({ timeoutMs = 15000 } = {}) {
     const timer = setTimeout(() => {
       const email = extractSignedInEmail(buffer);
       if (email) settle(null, { email, output: cleanTerminal(buffer) });
-      else settle(new Error('Timed out waiting for native AGY account email.'));
+      else settle(new Error('Timed out waiting for AGY account email.'));
     }, timeoutMs);
 
     terminal.onData(data => {
@@ -167,7 +167,7 @@ export function readNativeAgyAccount({ timeoutMs = 15000 } = {}) {
       const email = extractSignedInEmail(buffer);
       if (email) settle(null, { email, output: cleanTerminal(buffer), exitCode });
       else if (exitCode === 0) settle(null, { email: '', output: cleanTerminal(buffer), exitCode });
-      else settle(new Error(`Native AGY exited with code ${exitCode} before an account email was detected.`));
+      else settle(new Error(`AGY exited with code ${exitCode} before an account email was detected.`));
     });
   });
 }
@@ -290,5 +290,5 @@ export const internals = {
   extractSignedInEmail,
   isSignedIn,
   normalizeLoginMethod,
-  readNativeAgyAccount,
+  readAgyAccount,
 };

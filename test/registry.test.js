@@ -53,7 +53,7 @@ test('debug session commands are not public commands', async () => {
   try {
     assert.equal(await run(['capture']), 2);
     assert.equal(await run(['import']), 2);
-    assert.equal(await run(['native']), 2);
+    assert.equal(await run(['debug']), 2);
     assert.equal(await run(['config']), 2);
   } finally {
     console.error = originalError;
@@ -94,7 +94,7 @@ test('parses alias set command arguments', () => {
   assert.throws(() => internals.parseSetAliasArgs(['alias', '02', 'to']), /Alias value/);
 });
 
-test('parses native AGY login OAuth output', () => {
+test('parses AGY login OAuth output', () => {
   const output = `
     Your browser should open automatically. If not:
     https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=abc
@@ -109,7 +109,7 @@ test('parses native AGY login OAuth output', () => {
   assert.equal(url, 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=abc&code_challenge=xyz&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback');
 });
 
-test('parses wrapped native AGY OAuth URL output', () => {
+test('parses wrapped AGY OAuth URL output', () => {
   const output = `
     https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h211cre235vtolojh4g403ep
     .apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5
@@ -141,7 +141,7 @@ test('formats OAuth URL as terminal hyperlink when TTY is available', () => {
   }
 });
 
-test('detects native AGY signed-in state from parsed terminal output', () => {
+test('detects AGY signed-in state from parsed terminal output', () => {
   assert.equal(loginInternals.isSignedIn(`
     Antigravity CLI 1.0.15
     writer@example.com
@@ -149,7 +149,7 @@ test('detects native AGY signed-in state from parsed terminal output', () => {
   `), true);
 });
 
-test('extracts signed-in email from latest native AGY login output', () => {
+test('extracts signed-in email from latest AGY login output', () => {
   assert.equal(loginInternals.extractSignedInEmail(`
     Antigravity CLI 1.0.15
     old@example.com

@@ -10,7 +10,7 @@ Install package `@badaruddinl/agy-authx`, then run the `agy-authx` command.
 npm install -g @badaruddinl/agy-authx
 ```
 
-This package is lightweight: no npm runtime dependencies and no native addon install step.
+This package is lightweight: no npm runtime dependencies and no compiled addon install step.
 
 Installing `@badaruddinl/agy-authx` exposes one command:
 
