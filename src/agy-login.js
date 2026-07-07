@@ -23,11 +23,9 @@ const GOOGLE_OAUTH_SCOPES = [
 
 export async function runAgyLogin(options = {}) {
   const method = normalizeLoginMethod(options.method);
-  if (method === 'oauth' && !usePipeLoginMode() && !process.env.AGY_AUTHX_LOGIN_FOREGROUND) {
+  if (shouldUseDirectLogin(method)) {
+    if (method === 'cloud-project') return runDirectCloudProjectLogin(options);
     return runDirectOAuthLogin();
-  }
-  if (method === 'cloud-project' && !usePipeLoginMode() && !process.env.AGY_AUTHX_LOGIN_FOREGROUND) {
-    throw new Error('`agy-authx login --cloud-project` is not available in the direct login flow yet. Use `agy-authx login --oauth`.');
   }
   if (!usePipeLoginMode()) {
     return runForegroundAgyLogin({ method });
@@ -332,14 +330,52 @@ async function runDirectOAuthLogin() {
     if (!code) throw new Error('Authorization code cannot be empty.');
 
     const token = await exchangeOAuthCode({ code, codeVerifier, oauthConfig });
-    await writeAgyCredential(JSON.stringify({
-      token: {
-        access_token: token.access_token,
-        token_type: token.token_type || 'Bearer',
-        refresh_token: token.refresh_token,
-        expiry: new Date(Date.now() + Number(token.expires_in || 3600) * 1000).toISOString(),
-      },
-      auth_method: 'consumer',
+    await writeAgyCredential(buildAgyCredential({ token, authMethod: 'consumer' }));
+
+    const email = await resolveTokenEmail(token);
+    if (email) {
+      console.log(`AGY credential detected for: ${email}`);
+    } else {
+      console.log('AGY credential detected.');
+    }
+    console.log('AGY sign-in completed. Saving session...');
+    return { ok: true, email };
+  } finally {
+    rl.close();
+  }
+}
+
+async function runDirectCloudProjectLogin(options = {}) {
+  const rl = readline.createInterface({ input, output });
+  try {
+    const cloudProject = await resolveCloudProjectId(options.cloudProject, rl);
+    const oauthConfig = await resolveGoogleOAuthConfig();
+    const codeVerifier = base64Url(crypto.randomBytes(64));
+    const codeChallenge = base64Url(crypto.createHash('sha256').update(codeVerifier).digest());
+    const state = base64Url(crypto.randomBytes(16));
+    const authUrl = buildGoogleOAuthUrl({
+      clientId: oauthConfig.clientId,
+      codeChallenge,
+      state,
+    });
+
+    console.log(`Using Google Cloud project: ${cloudProject}`);
+    console.log('Opening Google Cloud project login in your browser...');
+    openUrl(authUrl);
+    console.log('');
+    console.log('If the browser does not open, open this URL:');
+    printOAuthUrl(authUrl);
+    console.log('');
+    console.log('After approving access, paste the authorization code or callback URL here.');
+    const answer = await rl.question('Authorization code: ');
+    const code = extractOAuthCallbackCode(answer);
+    if (!code) throw new Error('Authorization code cannot be empty.');
+
+    const token = await exchangeOAuthCode({ code, codeVerifier, oauthConfig });
+    await writeAgyCredential(buildAgyCredential({
+      token,
+      authMethod: 'adc',
+      quotaProjectId: cloudProject,
     }));
 
     const email = await resolveTokenEmail(token);
@@ -353,6 +389,36 @@ async function runDirectOAuthLogin() {
   } finally {
     rl.close();
   }
+}
+
+async function resolveCloudProjectId(value, rl) {
+  const detected = String(
+    value
+    || process.env.AGY_AUTHX_CLOUD_PROJECT
+    || process.env.GOOGLE_CLOUD_PROJECT
+    || process.env.GCLOUD_PROJECT
+    || process.env.CLOUDSDK_CORE_PROJECT
+    || '',
+  ).trim();
+  if (detected) return detected;
+  const answer = await rl.question('Google Cloud project ID: ');
+  const cloudProject = answer.trim();
+  if (!cloudProject) throw new Error('Google Cloud project ID cannot be empty.');
+  return cloudProject;
+}
+
+function buildAgyCredential({ token, authMethod, quotaProjectId = '' }) {
+  const credential = {
+    token: {
+      access_token: token.access_token,
+      token_type: token.token_type || 'Bearer',
+      refresh_token: token.refresh_token,
+      expiry: new Date(Date.now() + Number(token.expires_in || 3600) * 1000).toISOString(),
+    },
+    auth_method: authMethod,
+  };
+  if (quotaProjectId) credential.quota_project_id = quotaProjectId;
+  return JSON.stringify(credential);
 }
 
 function buildGoogleOAuthUrl({ clientId, codeChallenge, state }) {
@@ -481,6 +547,7 @@ function extractOAuthCallbackCode(value) {
 }
 
 function openUrl(url) {
+  if (process.env.AGY_AUTHX_NO_BROWSER && process.env.AGY_AUTHX_NO_BROWSER !== '0') return;
   if (process.platform === 'win32') {
     const child = spawn('powershell.exe', ['-NoProfile', '-Command', 'Start-Process -FilePath $args[0]', url], {
       stdio: 'ignore',
@@ -590,6 +657,11 @@ function usePipeLoginMode() {
   return Boolean(process.env.AGY_AUTHX_LOGIN_PIPE && process.env.AGY_AUTHX_LOGIN_PIPE !== '0');
 }
 
+function shouldUseDirectLogin(method) {
+  if (method === 'cloud-project') return true;
+  return method === 'oauth' && !usePipeLoginMode() && !process.env.AGY_AUTHX_LOGIN_FOREGROUND;
+}
+
 function formatTerminalLink(url, label) {
   if (!process.stdout.isTTY) return url;
   return `\u001b]8;;${url}\u0007${label}\u001b]8;;\u0007`;
@@ -602,6 +674,7 @@ function printOAuthUrl(url) {
 
 export const internals = {
   cleanTerminal,
+  buildAgyCredential,
   buildGoogleOAuthUrl,
   extractEmailFromIdToken,
   extractAuthorizationCode,
@@ -617,7 +690,9 @@ export const internals = {
   normalizeLoginMethod,
   printOAuthUrl,
   readAgyAccount,
+  resolveCloudProjectId,
   resolveAgyExecutable,
   resolveGoogleOAuthConfig,
+  shouldUseDirectLogin,
   usePipeLoginMode,
 };

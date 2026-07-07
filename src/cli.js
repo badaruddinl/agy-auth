@@ -26,6 +26,7 @@ function help() {
   console.log('  login [--alias name]    Run AGY sign-in, then save the resulting session');
   console.log('  login --oauth           Use Google OAuth login method (default)');
   console.log('  login --cloud-project   Use Google Cloud project login method');
+  console.log('  login --cloud-project --project <id>');
   console.log('  login --activate        Keep the newly logged-in account active');
   console.log('  list                    List stored auth snapshots');
   console.log('  list --refresh          Refresh quota for all snapshots, then list');
@@ -59,8 +60,42 @@ function parseLoginMethod(args) {
   return wantsCloudProject ? 'cloud-project' : 'oauth';
 }
 
+function parseCloudProject(args) {
+  const names = ['--project', '--quota-project', '--gcp-project', '--google-cloud-project-id'];
+  for (const name of names) {
+    const index = args.indexOf(name);
+    if (index >= 0) {
+      if (!args[index + 1]) throw new Error(`${name} requires a value.`);
+      return args[index + 1];
+    }
+    const prefix = `${name}=`;
+    const inline = args.find(arg => arg.startsWith(prefix));
+    if (inline) {
+      const value = inline.slice(prefix.length);
+      if (!value) throw new Error(`${name} requires a value.`);
+      return value;
+    }
+  }
+  return '';
+}
+
 function stripLoginMethodArgs(args) {
   return args.filter(arg => !['--oauth', '--cloud-project', '--gcp', '--google-cloud-project'].includes(arg));
+}
+
+function stripCloudProjectArgs(args) {
+  const names = new Set(['--project', '--quota-project', '--gcp-project', '--google-cloud-project-id']);
+  const stripped = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (names.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if ([...names].some(name => arg.startsWith(`${name}=`))) continue;
+    stripped.push(arg);
+  }
+  return stripped;
 }
 
 function shouldActivateLogin(args) {
@@ -68,7 +103,7 @@ function shouldActivateLogin(args) {
 }
 
 function stripLoginControlArgs(args) {
-  return stripLoginMethodArgs(args)
+  return stripCloudProjectArgs(stripLoginMethodArgs(args))
     .filter(arg => !['--activate', '--active', '--use', '--switch'].includes(arg));
 }
 
@@ -215,6 +250,7 @@ async function login(args, jsonMode) {
   }
 
   const loginMethod = parseLoginMethod(args);
+  const cloudProject = parseCloudProject(args);
   const activateNewSession = shouldActivateLogin(args);
   const captureArgs = stripLoginControlArgs(args);
   const previousRegistry = await readRegistry();
@@ -231,7 +267,7 @@ async function login(args, jsonMode) {
   if (!jsonMode) console.log('Starting agy-authx login...');
   let loginResult = null;
   try {
-    loginResult = await runAgyLogin({ method: loginMethod });
+    loginResult = await runAgyLogin({ method: loginMethod, cloudProject });
   } catch (error) {
     if (previousSecret) await writeAgyCredential(previousSecret);
     throw error;
@@ -665,6 +701,7 @@ export const internals = {
   defaultRegistry,
   findAccount,
   parseAlias,
+  parseCloudProject,
   parseLoginMethod,
   parseSetAliasArgs,
   sameEmail,

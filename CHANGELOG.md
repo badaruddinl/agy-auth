@@ -25,6 +25,7 @@ All notable changes to this project are documented here.
 - The OAuth login prompt now always prints the full Google URL as plain text, so Git Bash/MINGW terminals that do not support terminal hyperlinks can still open it manually.
 - `agy-authx login` now polls recent AGY logs while waiting, so OAuth URLs and authorization-code prompts written to AGY log files are surfaced instead of leaving the terminal stuck after startup.
 - `agy-authx login` starts credential polling immediately, allowing silent AGY auth success from keyring refresh to be captured.
+- `agy-authx login --cloud-project` now uses a direct browser authorization flow and writes an AGY Google Cloud project credential with `auth_method: "adc"` and the selected quota project.
 
 ## 0.1.18 - 2026-07-07
 

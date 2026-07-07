@@ -146,6 +146,45 @@ test('login method selection matches AGY interactive menu', () => {
   assert.equal(loginInternals.loginMethodInput('cloud-project'), '\x1b[B\r');
 });
 
+test('cloud project login uses direct flow by default', () => {
+  const previousPipe = process.env.AGY_AUTHX_LOGIN_PIPE;
+  const previousForeground = process.env.AGY_AUTHX_LOGIN_FOREGROUND;
+  delete process.env.AGY_AUTHX_LOGIN_PIPE;
+  delete process.env.AGY_AUTHX_LOGIN_FOREGROUND;
+  try {
+    assert.equal(loginInternals.shouldUseDirectLogin('oauth'), true);
+    assert.equal(loginInternals.shouldUseDirectLogin('cloud-project'), true);
+    process.env.AGY_AUTHX_LOGIN_PIPE = '1';
+    process.env.AGY_AUTHX_LOGIN_FOREGROUND = '1';
+    assert.equal(loginInternals.shouldUseDirectLogin('oauth'), false);
+    assert.equal(loginInternals.shouldUseDirectLogin('cloud-project'), true);
+  } finally {
+    if (previousPipe === undefined) delete process.env.AGY_AUTHX_LOGIN_PIPE;
+    else process.env.AGY_AUTHX_LOGIN_PIPE = previousPipe;
+    if (previousForeground === undefined) delete process.env.AGY_AUTHX_LOGIN_FOREGROUND;
+    else process.env.AGY_AUTHX_LOGIN_FOREGROUND = previousForeground;
+  }
+});
+
+test('builds AGY cloud project credential', () => {
+  const credential = JSON.parse(loginInternals.buildAgyCredential({
+    token: {
+      access_token: 'access',
+      token_type: 'Bearer',
+      refresh_token: 'refresh',
+      expires_in: 3600,
+    },
+    authMethod: 'adc',
+    quotaProjectId: 'example-project',
+  }));
+
+  assert.equal(credential.auth_method, 'adc');
+  assert.equal(credential.quota_project_id, 'example-project');
+  assert.equal(credential.token.access_token, 'access');
+  assert.equal(credential.token.refresh_token, 'refresh');
+  assert.match(credential.token.expiry, /^\d{4}-\d{2}-\d{2}T/);
+});
+
 test('builds AGY Google OAuth URL for direct login', () => {
   const url = new URL(loginInternals.buildGoogleOAuthUrl({
     clientId: 'test-client.apps.googleusercontent.com',
@@ -201,10 +240,15 @@ test('parses agy-authx login method flags', () => {
   assert.equal(internals.parseLoginMethod(['--oauth']), 'oauth');
   assert.equal(internals.parseLoginMethod(['--cloud-project']), 'cloud-project');
   assert.equal(internals.parseLoginMethod(['--gcp']), 'cloud-project');
+  assert.equal(internals.parseCloudProject(['--project', 'example-project']), 'example-project');
+  assert.equal(internals.parseCloudProject(['--quota-project=quota-project']), 'quota-project');
   assert.deepEqual(internals.stripLoginMethodArgs(['--cloud-project', '--alias', 'main']), ['--alias', 'main']);
+  assert.deepEqual(internals.stripLoginControlArgs(['--cloud-project', '--project', 'example-project', '--alias', 'main']), ['--alias', 'main']);
   assert.equal(internals.shouldActivateLogin(['--activate']), true);
   assert.equal(internals.shouldActivateLogin(['--alias', 'main']), false);
   assert.deepEqual(internals.stripLoginControlArgs(['--activate', '--cloud-project', '--alias', 'main']), ['--alias', 'main']);
+  assert.throws(() => internals.parseCloudProject(['--project']), /requires a value/);
+  assert.throws(() => internals.parseCloudProject(['--project=']), /requires a value/);
   assert.throws(() => internals.parseLoginMethod(['--oauth', '--cloud-project']), /Choose only one login method/);
 });
 
