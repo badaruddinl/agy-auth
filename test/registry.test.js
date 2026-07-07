@@ -9,7 +9,7 @@ import { internals, run } from '../src/cli.js';
 import { formatLastRefresh, formatResetAt, formatUsageColumns, parseRefreshDuration, printAccounts } from '../src/format.js';
 import { internals as legacyInternals, runLegacyCommand } from '../src/legacy.js';
 import { readRegistry, upsertAccount } from '../src/registry.js';
-import { parseUsageOutput } from '../src/usage.js';
+import { internals as usageInternals, parseUsageOutput } from '../src/usage.js';
 
 test('extracts latest AGY account email from logs', () => {
   const email = extractAccountEmail(`
@@ -23,7 +23,7 @@ test('extracts latest AGY account email from logs', () => {
 test('agy-authx package owns only the agy-authx command', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.18');
+  assert.equal(packageJson.version, '0.1.19');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
   });
@@ -35,7 +35,7 @@ test('agy-auth bridge owns only the agy-auth command and installs agy-authx', as
   assert.deepEqual(packageJson.bin, {
     'agy-auth': 'bin/agy-auth.js',
   });
-  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.18');
+  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.19');
 });
 
 test('legacy bridge parser recognizes managed legacy bridge versions', () => {
@@ -126,6 +126,53 @@ test('agy-authx login is a local session manager command', () => {
   assert.equal(typeof internals.parseAlias, 'function');
 });
 
+test('login uses foreground AGY by default', () => {
+  const previous = process.env.AGY_AUTHX_LOGIN_PIPE;
+  delete process.env.AGY_AUTHX_LOGIN_PIPE;
+  try {
+    assert.equal(loginInternals.usePipeLoginMode(), false);
+    process.env.AGY_AUTHX_LOGIN_PIPE = '1';
+    assert.equal(loginInternals.usePipeLoginMode(), true);
+    process.env.AGY_AUTHX_LOGIN_PIPE = '0';
+    assert.equal(loginInternals.usePipeLoginMode(), false);
+  } finally {
+    if (previous === undefined) delete process.env.AGY_AUTHX_LOGIN_PIPE;
+    else process.env.AGY_AUTHX_LOGIN_PIPE = previous;
+  }
+});
+
+test('login method selection matches AGY interactive menu', () => {
+  assert.equal(loginInternals.loginMethodInput('oauth'), '\r');
+  assert.equal(loginInternals.loginMethodInput('cloud-project'), '\x1b[B\r');
+});
+
+test('builds AGY Google OAuth URL for direct login', () => {
+  const url = new URL(loginInternals.buildGoogleOAuthUrl({
+    clientId: 'test-client.apps.googleusercontent.com',
+    codeChallenge: 'challenge',
+    state: 'state',
+  }));
+
+  assert.equal(url.origin + url.pathname, 'https://accounts.google.com/o/oauth2/auth');
+  assert.equal(url.searchParams.get('client_id'), 'test-client.apps.googleusercontent.com');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://antigravity.google/oauth-callback');
+  assert.equal(url.searchParams.get('code_challenge'), 'challenge');
+  assert.equal(url.searchParams.get('code_challenge_method'), 'S256');
+  assert.match(url.searchParams.get('scope'), /userinfo\.email/);
+});
+
+test('extracts OAuth code from callback URL or pasted value', () => {
+  assert.equal(
+    loginInternals.extractOAuthCallbackCode('https://antigravity.google/oauth-callback?state=s&code=4%2Fabc123'),
+    '4/abc123',
+  );
+  assert.equal(loginInternals.extractOAuthCallbackCode('4/raw-code'), '4/raw-code');
+});
+
+test('masks OAuth client secrets for diagnostics', () => {
+  assert.equal(loginInternals.maskOAuthSecret('secret-abcdefghijklmnopqrstuvwxyz'), 'secret-abc...wxyz');
+});
+
 test('debug session commands are not public commands', async () => {
   const originalError = console.error;
   const writes = [];
@@ -191,14 +238,14 @@ test('parses AGY login OAuth output', () => {
 
 test('parses wrapped AGY OAuth URL output', () => {
   const output = `
-    https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h211cre235vtolojh4g403ep
+    https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=test-client
     .apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5
     GLVhiFMpkdiEHtd8st0&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback
 
     If you aren't automatically redirected, paste the authorization code below:
   `;
 
-  assert.equal(loginInternals.extractGoogleAuthUrl(output), 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-tmhssin2h211cre235vtolojh4g403ep.apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5GLVhiFMpkdiEHtd8st0&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback');
+  assert.equal(loginInternals.extractGoogleAuthUrl(output), 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=test-client.apps.googleusercontent.com&code_challenge=u9c9mCt8PBAWhbHmWunv6Fb5GLVhiFMpkdiEHtd8st0&code_challenge_method=S256&prompt=consent&redirect_uri=https%3A%2F%2Fantigravity.google%2Foauth-callback');
 });
 
 test('preserves OAuth URL from terminal hyperlink escape output', () => {
@@ -285,6 +332,31 @@ test('parses AGY usage output', () => {
   assert.equal(usage.groups[0].weekly.remainingPercent, 89);
   assert.equal(usage.groups[0].weekly.refreshesIn, '121h 51m');
   assert.equal(usage.groups[0].fiveHour.remainingPercent, 100);
+  assert.equal(usage.groups[1].weekly.remainingPercent, 66);
+});
+
+test('parses AGY local quota summary protobuf', () => {
+  const payload = encodeMessage([
+    [1, encodeMessage([
+      [2, encodeQuotaGroup('Gemini Models', 'Models within this group: Gemini Flash, Gemini Pro', [
+        encodeQuotaLimit('gemini-weekly', 'Weekly Limit', 'weekly', 0.89, 1784016000),
+        encodeQuotaLimit('gemini-5h', 'Five Hour Limit', '5h', 1, 1783425600),
+      ])],
+      [2, encodeQuotaGroup('Claude and GPT models', 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS', [
+        encodeQuotaLimit('3p-weekly', 'Weekly Limit', 'weekly', 0.66, 1783416600),
+        encodeQuotaLimit('3p-5h', 'Five Hour Limit', '5h', 1, 1783432800),
+      ])],
+    ])],
+  ]);
+
+  const usage = usageInternals.parseQuotaSummary(payload, '2026-07-07T09:00:00Z');
+
+  assert.equal(usage.available, true);
+  assert.equal(usage.groups[0].name, 'Gemini Models');
+  assert.equal(usage.groups[0].models, 'Gemini Flash, Gemini Pro');
+  assert.equal(usage.groups[0].weekly.remainingPercent, 89);
+  assert.equal(usage.groups[0].fiveHour.remainingPercent, 100);
+  assert.equal(usage.groups[1].name, 'Claude And Gpt Models');
   assert.equal(usage.groups[1].weekly.remainingPercent, 66);
 });
 
@@ -470,6 +542,53 @@ test('highlights the active account row when color is enabled', () => {
 
 function stripAnsi(value) {
   return String(value).replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+function encodeQuotaGroup(name, models, limits) {
+  return encodeMessage([
+    ...limits.map(limit => [1, limit]),
+    [2, Buffer.from(name)],
+    [3, Buffer.from(models)],
+  ]);
+}
+
+function encodeQuotaLimit(id, title, key, fraction, resetSeconds) {
+  return encodeMessage([
+    [1, Buffer.from(id)],
+    [2, Buffer.from(title)],
+    [3, Buffer.from(key)],
+    [6, encodeMessage([[1, resetSeconds]])],
+    [4, fraction, 'fixed32'],
+  ]);
+}
+
+function encodeMessage(fields) {
+  return Buffer.concat(fields.map(([field, value, type]) => {
+    if (Buffer.isBuffer(value)) {
+      return Buffer.concat([
+        encodeVarint((field << 3) | 2),
+        encodeVarint(value.length),
+        value,
+      ]);
+    }
+    if (type === 'fixed32') {
+      const body = Buffer.alloc(4);
+      body.writeFloatLE(value);
+      return Buffer.concat([encodeVarint((field << 3) | 5), body]);
+    }
+    return Buffer.concat([encodeVarint(field << 3), encodeVarint(value)]);
+  }));
+}
+
+function encodeVarint(value) {
+  const bytes = [];
+  let remaining = value;
+  while (remaining >= 0x80) {
+    bytes.push((remaining & 0x7f) | 0x80);
+    remaining = Math.floor(remaining / 0x80);
+  }
+  bytes.push(remaining);
+  return Buffer.from(bytes);
 }
 
 test('formats recent refresh timestamp', () => {

@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## Unreleased
+## 0.1.19 - 2026-07-07
 
 ### Added
 
@@ -16,6 +16,15 @@ All notable changes to this project are documented here.
 - Keep `enable` and `disable` as aliases for the state-based commands.
 - Manage only `@badaruddinl/agy-auth` versions less than or equal to `0.1.17`; newer versions are refused.
 - `@badaruddinl/agy-authx` owns only the `agy-authx` command; `@badaruddinl/agy-auth` owns only the `agy-auth` bridge command and runs the `agy-authx` implementation.
+- Removed the bridge package postinstall notice so `npm install -g @badaruddinl/agy-auth` installs without extra npm warnings.
+
+### Fixed
+
+- `list --refresh` now reads quota from the AGY local backend instead of falling back to cached usage when AGY's interactive `/usage` command is not available through pipes.
+- `agy-auth login`, `agy-authx login`, and `agy-authx login --oauth` now use a direct Google OAuth browser flow instead of opening the AGY login menu.
+- The OAuth login prompt now always prints the full Google URL as plain text, so Git Bash/MINGW terminals that do not support terminal hyperlinks can still open it manually.
+- `agy-authx login` now polls recent AGY logs while waiting, so OAuth URLs and authorization-code prompts written to AGY log files are surfaced instead of leaving the terminal stuck after startup.
+- `agy-authx login` starts credential polling immediately, allowing silent AGY auth success from keyring refresh to be captured.
 
 ## 0.1.18 - 2026-07-07
 

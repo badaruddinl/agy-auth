@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-auth",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Compatibility bridge package for @badaruddinl/agy-authx.",
   "type": "module",
   "bin": {
@@ -8,13 +8,9 @@
   },
   "files": [
     "bin",
-    "scripts",
     "README.md",
     "LICENSE"
   ],
-  "scripts": {
-    "postinstall": "node scripts/postinstall-warning.js"
-  },
   "keywords": [
     "antigravity",
     "agy",
@@ -34,7 +30,7 @@
   },
   "homepage": "https://github.com/badaruddinl/agy-authx#readme",
   "dependencies": {
-    "@badaruddinl/agy-authx": "^0.1.18"
+    "@badaruddinl/agy-authx": "^0.1.19"
   },
   "engines": {
     "node": ">=18"

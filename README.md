@@ -29,8 +29,8 @@ Use one runtime consistently:
 ```bash
 agy-authx status
 agy-authx login --alias main
+agy-authx login --oauth --alias main
 agy-authx login --activate --alias main
-agy-authx login --cloud-project --alias work
 agy-authx list
 agy-authx list --refresh
 agy-authx usage
@@ -44,7 +44,9 @@ agy-authx verify
 agy-authx remove main
 ```
 
-`agy-authx login` saves the newly logged-in account but preserves the previously active AGY session when one exists. Use `agy-authx login --activate` when you want the newly logged-in account to become active immediately.
+`agy-authx login` uses the Google OAuth browser flow by default, saves the newly logged-in account, and preserves the previously active AGY session when one exists. Use `agy-authx login --activate` when you want the newly logged-in account to become active immediately.
+
+`agy-authx login --cloud-project` is intentionally not routed through the AGY interactive menu. It will fail fast until the Google Cloud project credential format can be handled directly.
 
 `agy-authx list` adapts to narrow terminals, keeps each account on one row, and highlights the selected active account when color output is available.
 
@@ -70,7 +72,7 @@ service: gemini:antigravity
 account: antigravity
 ```
 
-`agy-authx login` temporarily clears the active AGY credential, runs `agy`, lets AGY complete sign-in, reads the resulting active session credential, and stores a snapshot under the `agy-auth` service.
+`agy-authx login` temporarily clears the active AGY credential, opens the Google OAuth browser flow, writes the resulting AGY credential, and stores a snapshot under the `agy-auth` service.
 
 The registry stores metadata only: email, alias, timestamps, and cached usage. Secrets stay in the OS keyring.
 

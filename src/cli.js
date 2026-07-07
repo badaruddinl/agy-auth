@@ -1,7 +1,7 @@
 import { VERSION, AGY_ACCOUNT, AGY_SERVICE, REGISTRY_PATH } from './constants.js';
 import { detectActiveAccount } from './agy.js';
 import { printAccounts, printJson } from './format.js';
-import { runAgyLogin } from './agy-login.js';
+import { maskOAuthSecret, resolveGoogleOAuthConfig, runAgyLogin } from './agy-login.js';
 import { readUsageFromAgy } from './usage.js';
 import { runLegacyCommand } from './legacy.js';
 import {
@@ -30,6 +30,7 @@ function help() {
   console.log('  list                    List stored auth snapshots');
   console.log('  list --refresh          Refresh quota for all snapshots, then list');
   console.log('  usage [--json]          Show active account quota and reset time');
+  console.log('  oauth-config            Show detected AGY Google OAuth client config');
   console.log('  switch <query>          Switch active AGY session by list id/email/alias/key');
   console.log('  set alias <query> to <alias>');
   console.log('  legacy <status|enabled|disabled>');
@@ -104,7 +105,7 @@ async function status(jsonMode) {
 }
 
 async function refreshActiveUsage() {
-  const usage = await readUsageFromAgy();
+  const usage = await readUsageFromAgy({ timeoutMs: 15000 });
   const email = usage.accountEmail || await detectActiveAccount();
   if (!email) return usage;
 
@@ -130,11 +131,11 @@ async function refreshActiveUsage() {
 async function refreshUsageForAccount(registry, account) {
   const secret = await readSnapshot(account.accountKey);
   await writeAgyCredential(secret);
-  const usage = await readUsageFromAgy();
+  const previous = registry.accounts.find(item => item.accountKey === account.accountKey);
+  const usage = await readUsageFromAgy({ timeoutMs: 20000 });
   const usageEmail = usage.accountEmail || account.email;
   const accountKey = account.accountKey;
-  await saveActiveCredentialSnapshot(accountKey);
-  const previous = registry.accounts.find(item => item.accountKey === accountKey);
+  if (usage.available) await saveActiveCredentialSnapshot(accountKey);
   upsertAccount(registry, {
     ...previous,
     accountKey,
@@ -160,12 +161,14 @@ async function refreshAllUsage() {
   const snapshotKeys = new Set(snapshots.map(snapshot => snapshot.account));
   const accounts = registry.accounts.filter(account => snapshotKeys.has(account.accountKey));
 
-  for (const account of accounts) {
-    await refreshUsageForAccount(registry, account);
-    await writeRegistry(registry);
+  try {
+    for (const account of accounts) {
+      await refreshUsageForAccount(registry, account);
+      await writeRegistry(registry);
+    }
+  } finally {
+    await restoreActiveSession(activeKey, fallbackSecret);
   }
-
-  await restoreActiveSession(activeKey, fallbackSecret);
 }
 
 async function captureCurrentAccount(args, emailOverride = '') {
@@ -425,6 +428,22 @@ async function usage(jsonMode) {
   return usagePayload.available ? 0 : 1;
 }
 
+async function oauthConfig(jsonMode) {
+  const config = await resolveGoogleOAuthConfig();
+  const payload = {
+    clientId: config.clientId,
+    clientSecrets: config.clientSecrets.map(maskOAuthSecret),
+    source: config.source,
+  };
+  if (jsonMode) printJson(payload);
+  else {
+    console.log(`client id: ${payload.clientId}`);
+    console.log(`client secrets: ${payload.clientSecrets.join(', ') || '-'}`);
+    console.log(`source: ${payload.source}`);
+  }
+  return 0;
+}
+
 async function switchAccount(query, jsonMode) {
   if (!query) {
     const registry = await readListRegistry();
@@ -630,6 +649,7 @@ export async function run(argv) {
   if (command === 'login') return login(rest, jsonMode);
   if (command === 'list') return list(jsonMode, refresh);
   if (command === 'usage') return usage(jsonMode);
+  if (command === 'oauth-config') return oauthConfig(jsonMode);
   if (command === 'switch') return switchAccount(rest[0], jsonMode);
   if (command === 'set') return setAlias(rest, jsonMode);
   if (command === 'legacy') return runLegacyCommand(rest, { jsonMode, authxVersion: VERSION });
