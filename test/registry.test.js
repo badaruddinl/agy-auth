@@ -23,7 +23,7 @@ test('extracts latest AGY account email from logs', () => {
 test('package exposes agy-authx and agy-auth commands through the agy-authx entrypoint', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.20');
+  assert.equal(packageJson.version, '0.1.19');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
     'agy-auth': 'bin/agy-authx.js',
@@ -77,7 +77,7 @@ test('legacy enable removes verified bridge before installing agy-authx', async 
 
   const lines = [];
   const code = await runLegacyCommand(['enabled'], {
-    authxVersion: '0.1.20',
+    authxVersion: '0.1.19',
     runner,
     output: line => lines.push(line),
   });
@@ -86,7 +86,7 @@ test('legacy enable removes verified bridge before installing agy-authx', async 
   assert.deepEqual(calls, [
     ['ls', '-g', '@badaruddinl/agy-auth', '--depth=0', '--json'],
     ['uninstall', '-g', '@badaruddinl/agy-auth'],
-    ['install', '-g', '@badaruddinl/agy-authx@0.1.20'],
+    ['install', '-g', '@badaruddinl/agy-authx@0.1.19'],
   ]);
   assert.match(lines.join('\n'), /agy-auth cmd is enabled through agy-authx/);
 });
