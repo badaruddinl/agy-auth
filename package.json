@@ -4,7 +4,6 @@
   "description": "agy-authx local Google Antigravity session manager for the agy CLI and App.",
   "type": "module",
   "bin": {
-    "agy-auth": "bin/agy-auth.js",
     "agy-authx": "bin/agy-auth.js"
   },
   "files": [

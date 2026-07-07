@@ -10,6 +10,7 @@ All notable changes to this project are documented here.
 
 ### Changed
 
+- `@badaruddinl/agy-authx` now exposes only the `agy-authx` command. The legacy `agy-auth` command is reserved for the final bridge release of `@badaruddinl/agy-auth`.
 - Shortened successful switch output to `switched to <account>`.
 
 ### Added
