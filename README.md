@@ -108,7 +108,7 @@ agy-authx legacy disabled
 agy-authx legacy enabled
 ```
 
-`legacy disabled` only uninstalls `@badaruddinl/agy-auth` after verifying that the installed version is less than or equal to `0.1.17`. `legacy enabled` removes that verified bridge package when present, then installs `@badaruddinl/agy-auth` so the `agy-auth` command comes from the bridge package and runs `agy-authx` behind the scenes. `enable` and `disable` are accepted as aliases.
+`legacy disabled` only uninstalls `@badaruddinl/agy-auth` after verifying that the installed version is a managed bridge release. `legacy enabled` removes that verified bridge package when present, then installs `@badaruddinl/agy-auth` so the `agy-auth` command comes from the bridge package and runs `agy-authx` behind the scenes. `enable` and `disable` are accepted as aliases.
 
 ## Keyring Requirements
 

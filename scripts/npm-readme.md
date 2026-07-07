@@ -50,7 +50,7 @@ agy-authx usage                       # show active account quota
 agy-authx switch 02                   # switch by list id
 agy-authx switch main                 # switch by alias/email/key
 agy-authx set alias 02 to backup      # set or update alias
-agy-authx legacy disabled             # remove verified @badaruddinl/agy-auth <= 0.1.17 bridge
+agy-authx legacy disabled             # remove the managed agy-auth bridge
 agy-authx legacy enabled              # enable agy-auth through the bridge package
 agy-authx remove main                 # remove one saved session
 ```

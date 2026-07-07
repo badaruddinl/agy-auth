@@ -23,7 +23,7 @@ test('extracts latest AGY account email from logs', () => {
 test('agy-authx package owns only the agy-authx command', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.19');
+  assert.equal(packageJson.version, '0.1.20');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
   });
@@ -35,7 +35,7 @@ test('agy-auth bridge owns only the agy-auth command and installs agy-authx', as
   assert.deepEqual(packageJson.bin, {
     'agy-auth': 'bin/agy-auth.js',
   });
-  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.19');
+  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.20');
 });
 
 test('legacy bridge parser recognizes managed legacy bridge versions', () => {
@@ -51,16 +51,17 @@ test('legacy bridge parser recognizes managed legacy bridge versions', () => {
   assert.equal(parsed.version, '0.1.16');
   assert.equal(parsed.managedBridge, true);
   assert.equal(legacyInternals.isManagedLegacyVersion('0.1.17'), true);
-  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.18'), false);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.20'), true);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.21'), false);
 });
 
 test('legacy bridge guard refuses to modify unmanaged versions', () => {
   assert.throws(
     () => legacyInternals.assertManagedLegacyBridge({
       installed: true,
-      version: '0.1.18',
+      version: '0.1.21',
     }),
-    /Only @badaruddinl\/agy-auth versions <= 0\.1\.17 are managed/,
+    /Only @badaruddinl\/agy-auth versions <= 0\.1\.20 are managed/,
   );
 });
 
@@ -73,7 +74,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
         stdout: JSON.stringify({
           dependencies: {
             '@badaruddinl/agy-auth': {
-              version: '0.1.17',
+              version: '0.1.20',
             },
           },
         }),
@@ -85,7 +86,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
 
   const lines = [];
   const code = await runLegacyCommand(['enabled'], {
-    authxVersion: '0.1.18',
+    authxVersion: '0.1.20',
     runner,
     output: line => lines.push(line),
   });

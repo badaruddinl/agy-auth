@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.20 - 2026-07-07
+
+### Fixed
+
+- Updated the npm README legacy command wording so `legacy disabled` no longer advertises the old `<= 0.1.17` bridge limit.
+- Allow `agy-authx legacy disabled` and `agy-authx legacy enabled` to manage current `@badaruddinl/agy-auth` bridge releases through `0.1.20`.
+
 ## 0.1.19 - 2026-07-07
 
 ### Added
