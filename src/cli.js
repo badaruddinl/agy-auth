@@ -32,7 +32,7 @@ function help() {
   console.log('  usage [--json]          Show active account quota and reset time');
   console.log('  switch <query>          Switch active AGY session by list id/email/alias/key');
   console.log('  set alias <query> to <alias>');
-  console.log('  legacy <status|enable|disable>');
+  console.log('  legacy <status|enabled|disabled>');
   console.log('  verify                  Verify agy-authx active account matches agy');
   console.log('  remove <query|--all>    Remove saved snapshots');
   console.log('  --version, -V           Show version');

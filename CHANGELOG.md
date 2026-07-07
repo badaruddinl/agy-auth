@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.20 - 2026-07-07
+
+### Changed
+
+- Prefer `agy-authx legacy enabled` and `agy-authx legacy disabled` for legacy command management.
+- Keep `enable` and `disable` as aliases for the state-based commands.
+- Manage only `@badaruddinl/agy-auth` versions less than or equal to `0.1.17`; newer versions are refused.
+
 ## 0.1.19 - 2026-07-07
 
 ### Added

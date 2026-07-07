@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 
 export const LEGACY_PACKAGE = '@badaruddinl/agy-auth';
 export const AUTHX_PACKAGE = '@badaruddinl/agy-authx';
-export const LEGACY_BRIDGE_VERSION = '0.1.17';
+export const MAX_MANAGED_LEGACY_VERSION = '0.1.17';
 
 const execFileAsync = promisify(execFile);
 
@@ -23,10 +23,32 @@ async function defaultRunner(command, args) {
 }
 
 function normalizeAction(action = 'status') {
-  if (action === 'enabled') return 'enable';
-  if (action === 'disabled') return 'disable';
-  if (['status', 'enable', 'disable'].includes(action)) return action;
-  throw new Error('Usage: agy-authx legacy <status|enable|disable>');
+  if (action === 'enable') return 'enabled';
+  if (action === 'disable') return 'disabled';
+  if (['status', 'enabled', 'disabled'].includes(action)) return action;
+  throw new Error('Usage: agy-authx legacy <status|enabled|disabled>');
+}
+
+function parseVersion(value = '') {
+  const match = String(value).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+  if (!match) return null;
+  return match.slice(1).map(Number);
+}
+
+function compareVersions(left, right) {
+  const parsedLeft = parseVersion(left);
+  const parsedRight = parseVersion(right);
+  if (!parsedLeft || !parsedRight) return null;
+  for (let index = 0; index < 3; index += 1) {
+    if (parsedLeft[index] > parsedRight[index]) return 1;
+    if (parsedLeft[index] < parsedRight[index]) return -1;
+  }
+  return 0;
+}
+
+function isManagedLegacyVersion(version) {
+  const comparison = compareVersions(version, MAX_MANAGED_LEGACY_VERSION);
+  return comparison !== null && comparison <= 0;
 }
 
 function parseGlobalPackage(text, packageName = LEGACY_PACKAGE) {
@@ -46,7 +68,7 @@ function parseGlobalPackage(text, packageName = LEGACY_PACKAGE) {
     installed: true,
     packageName,
     version,
-    managedBridge: version === LEGACY_BRIDGE_VERSION,
+    managedBridge: isManagedLegacyVersion(version),
     invalid: Boolean(item.invalid),
     problems: item.problems || [],
   };
@@ -69,10 +91,10 @@ async function readLegacyBridge(runner = defaultRunner) {
 
 function assertManagedLegacyBridge(legacy) {
   if (!legacy.installed) return;
-  if (legacy.version === LEGACY_BRIDGE_VERSION) return;
+  if (isManagedLegacyVersion(legacy.version)) return;
   throw new Error(
     `Refusing to modify ${LEGACY_PACKAGE}@${legacy.version}. `
-    + `Only ${LEGACY_PACKAGE}@${LEGACY_BRIDGE_VERSION} is managed by this command.`,
+    + `Only ${LEGACY_PACKAGE} versions <= ${MAX_MANAGED_LEGACY_VERSION} are managed by this command.`,
   );
 }
 
@@ -97,15 +119,15 @@ function printLegacyResult(payload, jsonMode, output = console.log) {
     return;
   }
 
-  if (payload.action === 'disable') {
-    if (payload.removed) output(`removed ${LEGACY_PACKAGE}@${LEGACY_BRIDGE_VERSION}`);
-    else output(`${LEGACY_PACKAGE}@${LEGACY_BRIDGE_VERSION} is not installed`);
+  if (payload.action === 'disabled') {
+    if (payload.removed) output(`removed ${LEGACY_PACKAGE}@${payload.version}`);
+    else output(`no managed ${LEGACY_PACKAGE} bridge is installed`);
     output(`agy-auth cmd should come from ${AUTHX_PACKAGE}@${payload.authxVersion}`);
     return;
   }
 
-  if (payload.action === 'enable') {
-    if (payload.removed) output(`removed ${LEGACY_PACKAGE}@${LEGACY_BRIDGE_VERSION}`);
+  if (payload.action === 'enabled') {
+    if (payload.removed) output(`removed ${LEGACY_PACKAGE}@${payload.version}`);
     output(`installed ${AUTHX_PACKAGE}@${payload.authxVersion}`);
     output('agy-auth cmd is enabled through agy-authx');
   }
@@ -124,7 +146,7 @@ export async function runLegacyCommand(args, options = {}) {
     ok: true,
     action,
     packageName: LEGACY_PACKAGE,
-    bridgeVersion: LEGACY_BRIDGE_VERSION,
+    maxManagedLegacyVersion: MAX_MANAGED_LEGACY_VERSION,
     authxPackage: AUTHX_PACKAGE,
     authxVersion,
     installed: legacy.installed,
@@ -134,12 +156,12 @@ export async function runLegacyCommand(args, options = {}) {
     installedAuthx: false,
   };
 
-  if (action === 'disable' && legacy.installed) {
+  if (action === 'disabled' && legacy.installed) {
     await uninstallLegacyBridge(runner);
     payload.removed = true;
   }
 
-  if (action === 'enable') {
+  if (action === 'enabled') {
     if (legacy.installed) {
       await uninstallLegacyBridge(runner);
       payload.removed = true;
@@ -154,10 +176,13 @@ export async function runLegacyCommand(args, options = {}) {
 
 export const internals = {
   assertManagedLegacyBridge,
+  compareVersions,
   installAuthx,
+  isManagedLegacyVersion,
   normalizeAction,
   npmCommand,
   parseGlobalPackage,
+  parseVersion,
   printLegacyResult,
   readLegacyBridge,
   uninstallLegacyBridge,

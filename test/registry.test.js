@@ -23,34 +23,36 @@ test('extracts latest AGY account email from logs', () => {
 test('package exposes agy-authx and agy-auth commands through the agy-authx entrypoint', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.19');
+  assert.equal(packageJson.version, '0.1.20');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
     'agy-auth': 'bin/agy-authx.js',
   });
 });
 
-test('legacy bridge parser recognizes only the managed bridge version', () => {
+test('legacy bridge parser recognizes managed legacy bridge versions', () => {
   const parsed = legacyInternals.parseGlobalPackage(JSON.stringify({
     dependencies: {
       '@badaruddinl/agy-auth': {
-        version: '0.1.17',
+        version: '0.1.16',
       },
     },
   }));
 
   assert.equal(parsed.installed, true);
-  assert.equal(parsed.version, '0.1.17');
+  assert.equal(parsed.version, '0.1.16');
   assert.equal(parsed.managedBridge, true);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.17'), true);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.18'), false);
 });
 
 test('legacy bridge guard refuses to modify unmanaged versions', () => {
   assert.throws(
     () => legacyInternals.assertManagedLegacyBridge({
       installed: true,
-      version: '0.1.16',
+      version: '0.1.18',
     }),
-    /Only @badaruddinl\/agy-auth@0\.1\.17 is managed/,
+    /Only @badaruddinl\/agy-auth versions <= 0\.1\.17 are managed/,
   );
 });
 
@@ -74,8 +76,8 @@ test('legacy enable removes verified bridge before installing agy-authx', async 
   };
 
   const lines = [];
-  const code = await runLegacyCommand(['enable'], {
-    authxVersion: '0.1.19',
+  const code = await runLegacyCommand(['enabled'], {
+    authxVersion: '0.1.20',
     runner,
     output: line => lines.push(line),
   });
@@ -84,7 +86,7 @@ test('legacy enable removes verified bridge before installing agy-authx', async 
   assert.deepEqual(calls, [
     ['ls', '-g', '@badaruddinl/agy-auth', '--depth=0', '--json'],
     ['uninstall', '-g', '@badaruddinl/agy-auth'],
-    ['install', '-g', '@badaruddinl/agy-authx@0.1.19'],
+    ['install', '-g', '@badaruddinl/agy-authx@0.1.20'],
   ]);
   assert.match(lines.join('\n'), /agy-auth cmd is enabled through agy-authx/);
 });

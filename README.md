@@ -39,8 +39,8 @@ agy-authx switch 02
 agy-authx switch main
 agy-authx set alias 02 to work
 agy-authx legacy status
-agy-authx legacy disable
-agy-authx legacy enable
+agy-authx legacy disabled
+agy-authx legacy enabled
 agy-authx verify
 agy-authx remove main
 ```
@@ -102,11 +102,11 @@ For Antigravity App, the selected account is guaranteed at the shared credential
 
 ```bash
 agy-authx legacy status
-agy-authx legacy disable
-agy-authx legacy enable
+agy-authx legacy disabled
+agy-authx legacy enabled
 ```
 
-`legacy disable` only uninstalls `@badaruddinl/agy-auth@0.1.17` after verifying the exact package and version. `legacy enable` removes that verified bridge package when present, then installs `@badaruddinl/agy-authx@<current version>` so the `agy-auth` command comes from the main package.
+`legacy disabled` only uninstalls `@badaruddinl/agy-auth` after verifying that the installed version is less than or equal to `0.1.17`. `legacy enabled` removes that verified bridge package when present, then installs `@badaruddinl/agy-authx@<current version>` so the `agy-auth` command comes from the main package. `enable` and `disable` are accepted as aliases.
 
 ## Keyring Requirements
 
