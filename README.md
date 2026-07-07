@@ -47,7 +47,7 @@ agy-authx remove main
 
 `agy-authx login` uses the Google OAuth browser flow by default, saves the newly logged-in account, and preserves the previously active AGY session when one exists. Use `agy-authx login --activate` when you want the newly logged-in account to become active immediately.
 
-`agy-authx login --cloud-project` uses the same direct browser authorization flow as OAuth login, writes an AGY Google Cloud project credential, and uses `--project <id>` as the quota project. If `--project` is omitted, `AGY_AUTHX_CLOUD_PROJECT`, `GOOGLE_CLOUD_PROJECT`, `GCLOUD_PROJECT`, or `CLOUDSDK_CORE_PROJECT` is used when set; otherwise the command prompts for the project id.
+`agy-authx login --cloud-project` follows AGY's Google Cloud Project flow by using Application Default Credentials, not the consumer OAuth browser flow. It reads `GOOGLE_APPLICATION_CREDENTIALS` or the gcloud ADC file at `application_default_credentials.json`, refreshes that ADC token, writes an AGY credential with `auth_method: "adc"`, and uses `--project <id>` or ADC `quota_project_id` as the quota project. If ADC is missing, run `gcloud auth application-default login` first.
 
 `agy-authx list` adapts to narrow terminals, keeps each account on one row, and highlights the selected active account when color output is available.
 

@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import fs from 'node:fs/promises';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
+import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { detectActiveAccountSince, readAgyLogsSince } from './agy.js';
@@ -346,68 +349,179 @@ async function runDirectOAuthLogin() {
 }
 
 async function runDirectCloudProjectLogin(options = {}) {
-  const rl = readline.createInterface({ input, output });
-  try {
-    const cloudProject = await resolveCloudProjectId(options.cloudProject, rl);
-    const oauthConfig = await resolveGoogleOAuthConfig();
-    const codeVerifier = base64Url(crypto.randomBytes(64));
-    const codeChallenge = base64Url(crypto.createHash('sha256').update(codeVerifier).digest());
-    const state = base64Url(crypto.randomBytes(16));
-    const authUrl = buildGoogleOAuthUrl({
-      clientId: oauthConfig.clientId,
-      codeChallenge,
-      state,
-    });
-
-    console.log(`Using Google Cloud project: ${cloudProject}`);
-    console.log('Opening Google Cloud project login in your browser...');
-    openUrl(authUrl);
-    console.log('');
-    console.log('If the browser does not open, open this URL:');
-    printOAuthUrl(authUrl);
-    console.log('');
-    console.log('After approving access, paste the authorization code or callback URL here.');
-    const answer = await rl.question('Authorization code: ');
-    const code = extractOAuthCallbackCode(answer);
-    if (!code) throw new Error('Authorization code cannot be empty.');
-
-    const token = await exchangeOAuthCode({ code, codeVerifier, oauthConfig });
-    await writeAgyCredential(buildAgyCredential({
-      token,
-      authMethod: 'adc',
-      quotaProjectId: cloudProject,
-    }));
-
-    const email = await resolveTokenEmail(token);
-    if (email) {
-      console.log(`AGY credential detected for: ${email}`);
-    } else {
-      console.log('AGY credential detected.');
-    }
-    console.log('AGY sign-in completed. Saving session...');
-    return { ok: true, email };
-  } finally {
-    rl.close();
+  const adc = await loadApplicationDefaultCredentials();
+  const quotaProjectId = resolveCloudProjectId(options.cloudProject, adc);
+  if (!quotaProjectId) {
+    throw new Error(
+      'Google Cloud project ID was not detected. Pass `--project <id>` or set quota_project_id in application_default_credentials.json.',
+    );
   }
+
+  const token = await exchangeAdcToken(adc);
+  await writeAgyCredential(buildAgyCredential({
+    token,
+    authMethod: 'adc',
+    quotaProjectId,
+    projectId: resolveAdcProjectId(adc, quotaProjectId),
+  }));
+
+  const email = adc.client_email || await resolveTokenEmail(token);
+  console.log(`Successfully authenticated. Quota project set to: ${quotaProjectId}`);
+  if (email) {
+    console.log(`AGY credential detected for: ${email}`);
+  } else {
+    console.log('AGY credential detected.');
+  }
+  console.log('AGY sign-in completed. Saving session...');
+  return { ok: true, email };
 }
 
-async function resolveCloudProjectId(value, rl) {
-  const detected = String(
+async function loadApplicationDefaultCredentials() {
+  const candidates = adcCredentialCandidates();
+  for (const credentialPath of candidates) {
+    const text = await fs.readFile(credentialPath, 'utf8').catch(error => {
+      if (error?.code === 'ENOENT') return null;
+      throw error;
+    });
+    if (!text) continue;
+    try {
+      const credentials = JSON.parse(text);
+      if (!credentials || typeof credentials !== 'object') {
+        throw new Error('ADC file did not contain a JSON object.');
+      }
+      return {
+        ...credentials,
+        source: credentialPath,
+      };
+    } catch (error) {
+      throw new Error(`Failed to parse ADC credentials from ${credentialPath}: ${error.message}`);
+    }
+  }
+  throw new Error(
+    'ADC authentication failed. Application Default Credentials were not found. '
+    + 'Run `gcloud auth application-default login` or set GOOGLE_APPLICATION_CREDENTIALS.',
+  );
+}
+
+function adcCredentialCandidates() {
+  const candidates = [];
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) candidates.push(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  const configDir = process.env.CLOUDSDK_CONFIG || defaultGcloudConfigDir();
+  if (configDir) candidates.push(path.join(configDir, 'application_default_credentials.json'));
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+function defaultGcloudConfigDir() {
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+    return path.join(appData, 'gcloud');
+  }
+  return path.join(os.homedir(), '.config', 'gcloud');
+}
+
+function resolveCloudProjectId(value, adc = {}) {
+  return String(
     value
+    || adc.quota_project_id
+    || adc.project_id
+    || process.env.GOOGLE_CLOUD_QUOTA_PROJECT
     || process.env.AGY_AUTHX_CLOUD_PROJECT
     || process.env.GOOGLE_CLOUD_PROJECT
     || process.env.GCLOUD_PROJECT
     || process.env.CLOUDSDK_CORE_PROJECT
+    || readGcloudConfigProject()
     || '',
   ).trim();
-  if (detected) return detected;
-  const answer = await rl.question('Google Cloud project ID: ');
-  const cloudProject = answer.trim();
-  if (!cloudProject) throw new Error('Google Cloud project ID cannot be empty.');
-  return cloudProject;
 }
 
-function buildAgyCredential({ token, authMethod, quotaProjectId = '' }) {
+function resolveAdcProjectId(adc, quotaProjectId) {
+  return String(adc.project_id || quotaProjectId || '').trim();
+}
+
+function readGcloudConfigProject() {
+  const configDir = process.env.CLOUDSDK_CONFIG || defaultGcloudConfigDir();
+  if (!configDir) return '';
+  const configPath = path.join(configDir, 'configurations', 'config_default');
+  if (!existsSync(configPath)) return '';
+  const match = readFileSync(configPath, 'utf8').match(/^project\s*=\s*(.+)$/m);
+  return match ? match[1].trim() : '';
+}
+
+async function exchangeAdcToken(adc) {
+  if (adc.type === 'authorized_user') return exchangeAuthorizedUserAdc(adc);
+  if (adc.type === 'service_account') return exchangeServiceAccountAdc(adc);
+  throw new Error(`ADC credential type is not supported yet: ${adc.type || 'unknown'}`);
+}
+
+async function exchangeAuthorizedUserAdc(adc) {
+  for (const field of ['client_id', 'client_secret', 'refresh_token']) {
+    if (!adc[field]) throw new Error(`ADC authorized_user credential is missing ${field}.`);
+  }
+  const response = await fetch(adc.token_uri || 'https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: adc.client_id,
+      client_secret: adc.client_secret,
+      grant_type: 'refresh_token',
+      refresh_token: adc.refresh_token,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`ADC authentication failed. Please verify your Application Default Credentials: ${payload.error_description || payload.error || response.status}`);
+  }
+  if (!payload.access_token) {
+    throw new Error('ADC token response did not include an access token.');
+  }
+  return {
+    access_token: payload.access_token,
+    token_type: payload.token_type || 'Bearer',
+    refresh_token: adc.refresh_token,
+    expires_in: payload.expires_in || 3600,
+    id_token: payload.id_token,
+  };
+}
+
+async function exchangeServiceAccountAdc(adc) {
+  for (const field of ['client_email', 'private_key']) {
+    if (!adc[field]) throw new Error(`ADC service_account credential is missing ${field}.`);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = [
+    base64UrlJson({ alg: 'RS256', typ: 'JWT' }),
+    base64UrlJson({
+      aud: adc.token_uri || 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now,
+      iss: adc.client_email,
+      scope: GOOGLE_OAUTH_SCOPES.join(' '),
+    }),
+  ].join('.');
+  const signature = crypto.createSign('RSA-SHA256').update(assertion).sign(adc.private_key, 'base64url');
+  const response = await fetch(adc.token_uri || 'https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      assertion: `${assertion}.${signature}`,
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(`ADC authentication failed. Please verify your service account credentials: ${payload.error_description || payload.error || response.status}`);
+  }
+  if (!payload.access_token) {
+    throw new Error('ADC service account token response did not include an access token.');
+  }
+  return {
+    access_token: payload.access_token,
+    token_type: payload.token_type || 'Bearer',
+    expires_in: payload.expires_in || 3600,
+  };
+}
+
+function buildAgyCredential({ token, authMethod, quotaProjectId = '', projectId = '' }) {
   const credential = {
     token: {
       access_token: token.access_token,
@@ -418,6 +532,7 @@ function buildAgyCredential({ token, authMethod, quotaProjectId = '' }) {
     auth_method: authMethod,
   };
   if (quotaProjectId) credential.quota_project_id = quotaProjectId;
+  if (projectId) credential.project_id = projectId;
   return JSON.stringify(credential);
 }
 
@@ -567,6 +682,10 @@ function base64Url(buffer) {
   return Buffer.from(buffer).toString('base64url');
 }
 
+function base64UrlJson(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
 function runForegroundAgyLogin({ method }) {
   const startedAt = Date.now();
   return new Promise((resolve, reject) => {
@@ -674,6 +793,7 @@ function printOAuthUrl(url) {
 
 export const internals = {
   cleanTerminal,
+  adcCredentialCandidates,
   buildAgyCredential,
   buildGoogleOAuthUrl,
   extractEmailFromIdToken,
@@ -690,8 +810,11 @@ export const internals = {
   normalizeLoginMethod,
   printOAuthUrl,
   readAgyAccount,
+  exchangeAuthorizedUserAdc,
+  loadApplicationDefaultCredentials,
   resolveCloudProjectId,
   resolveAgyExecutable,
+  resolveAdcProjectId,
   resolveGoogleOAuthConfig,
   shouldUseDirectLogin,
   usePipeLoginMode,

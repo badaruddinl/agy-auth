@@ -23,7 +23,7 @@ test('extracts latest AGY account email from logs', () => {
 test('agy-authx package owns only the agy-authx command', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.20');
+  assert.equal(packageJson.version, '0.1.21');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
   });
@@ -35,7 +35,7 @@ test('agy-auth bridge owns only the agy-auth command and installs agy-authx', as
   assert.deepEqual(packageJson.bin, {
     'agy-auth': 'bin/agy-auth.js',
   });
-  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.20');
+  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.21');
 });
 
 test('legacy bridge parser recognizes managed legacy bridge versions', () => {
@@ -51,17 +51,17 @@ test('legacy bridge parser recognizes managed legacy bridge versions', () => {
   assert.equal(parsed.version, '0.1.16');
   assert.equal(parsed.managedBridge, true);
   assert.equal(legacyInternals.isManagedLegacyVersion('0.1.17'), true);
-  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.20'), true);
-  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.21'), false);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.21'), true);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.22'), false);
 });
 
 test('legacy bridge guard refuses to modify unmanaged versions', () => {
   assert.throws(
     () => legacyInternals.assertManagedLegacyBridge({
       installed: true,
-      version: '0.1.21',
+      version: '0.1.22',
     }),
-    /Only @badaruddinl\/agy-auth versions <= 0\.1\.20 are managed/,
+    /Only @badaruddinl\/agy-auth versions <= 0\.1\.21 are managed/,
   );
 });
 
@@ -74,7 +74,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
         stdout: JSON.stringify({
           dependencies: {
             '@badaruddinl/agy-auth': {
-              version: '0.1.20',
+              version: '0.1.21',
             },
           },
         }),
@@ -86,7 +86,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
 
   const lines = [];
   const code = await runLegacyCommand(['enabled'], {
-    authxVersion: '0.1.20',
+    authxVersion: '0.1.21',
     runner,
     output: line => lines.push(line),
   });
@@ -147,7 +147,7 @@ test('login method selection matches AGY interactive menu', () => {
   assert.equal(loginInternals.loginMethodInput('cloud-project'), '\x1b[B\r');
 });
 
-test('cloud project login uses direct flow by default', () => {
+test('cloud project login uses direct ADC flow by default', () => {
   const previousPipe = process.env.AGY_AUTHX_LOGIN_PIPE;
   const previousForeground = process.env.AGY_AUTHX_LOGIN_FOREGROUND;
   delete process.env.AGY_AUTHX_LOGIN_PIPE;
@@ -177,13 +177,115 @@ test('builds AGY cloud project credential', () => {
     },
     authMethod: 'adc',
     quotaProjectId: 'example-project',
+    projectId: 'source-project',
   }));
 
   assert.equal(credential.auth_method, 'adc');
   assert.equal(credential.quota_project_id, 'example-project');
+  assert.equal(credential.project_id, 'source-project');
   assert.equal(credential.token.access_token, 'access');
   assert.equal(credential.token.refresh_token, 'refresh');
   assert.match(credential.token.expiry, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('resolves cloud project from ADC before environment fallback', () => {
+  const previous = {
+    quota: process.env.GOOGLE_CLOUD_QUOTA_PROJECT,
+    agy: process.env.AGY_AUTHX_CLOUD_PROJECT,
+    google: process.env.GOOGLE_CLOUD_PROJECT,
+    gcloud: process.env.GCLOUD_PROJECT,
+    cloudSdk: process.env.CLOUDSDK_CORE_PROJECT,
+  };
+  process.env.GOOGLE_CLOUD_QUOTA_PROJECT = 'env-quota';
+  delete process.env.AGY_AUTHX_CLOUD_PROJECT;
+  delete process.env.GOOGLE_CLOUD_PROJECT;
+  delete process.env.GCLOUD_PROJECT;
+  delete process.env.CLOUDSDK_CORE_PROJECT;
+  try {
+    assert.equal(loginInternals.resolveCloudProjectId('explicit-project', {
+      quota_project_id: 'adc-quota',
+      project_id: 'adc-project',
+    }), 'explicit-project');
+    assert.equal(loginInternals.resolveCloudProjectId('', {
+      quota_project_id: 'adc-quota',
+      project_id: 'adc-project',
+    }), 'adc-quota');
+    assert.equal(loginInternals.resolveCloudProjectId('', {
+      project_id: 'adc-project',
+    }), 'adc-project');
+    assert.equal(loginInternals.resolveCloudProjectId('', {}), 'env-quota');
+  } finally {
+    if (previous.quota === undefined) delete process.env.GOOGLE_CLOUD_QUOTA_PROJECT;
+    else process.env.GOOGLE_CLOUD_QUOTA_PROJECT = previous.quota;
+    if (previous.agy === undefined) delete process.env.AGY_AUTHX_CLOUD_PROJECT;
+    else process.env.AGY_AUTHX_CLOUD_PROJECT = previous.agy;
+    if (previous.google === undefined) delete process.env.GOOGLE_CLOUD_PROJECT;
+    else process.env.GOOGLE_CLOUD_PROJECT = previous.google;
+    if (previous.gcloud === undefined) delete process.env.GCLOUD_PROJECT;
+    else process.env.GCLOUD_PROJECT = previous.gcloud;
+    if (previous.cloudSdk === undefined) delete process.env.CLOUDSDK_CORE_PROJECT;
+    else process.env.CLOUDSDK_CORE_PROJECT = previous.cloudSdk;
+  }
+});
+
+test('loads ADC credentials from GOOGLE_APPLICATION_CREDENTIALS', async () => {
+  const previous = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'agy-authx-adc-'));
+  const credentialPath = path.join(directory, 'adc.json');
+  await fs.writeFile(credentialPath, JSON.stringify({
+    type: 'authorized_user',
+    client_id: 'client',
+    client_secret: 'secret',
+    refresh_token: 'refresh',
+    quota_project_id: 'quota-project',
+  }));
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialPath;
+  try {
+    const adc = await loginInternals.loadApplicationDefaultCredentials();
+    assert.equal(adc.type, 'authorized_user');
+    assert.equal(adc.quota_project_id, 'quota-project');
+    assert.equal(adc.source, credentialPath);
+  } finally {
+    if (previous === undefined) delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+    else process.env.GOOGLE_APPLICATION_CREDENTIALS = previous;
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('exchanges authorized_user ADC refresh token', async () => {
+  const previousFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    calls.push({ url, options });
+    return {
+      ok: true,
+      async json() {
+        return {
+          access_token: 'adc-access',
+          token_type: 'Bearer',
+          expires_in: 123,
+          id_token: 'id-token',
+        };
+      },
+    };
+  };
+  try {
+    const token = await loginInternals.exchangeAuthorizedUserAdc({
+      type: 'authorized_user',
+      client_id: 'client-id',
+      client_secret: 'client-secret',
+      refresh_token: 'adc-refresh',
+      token_uri: 'https://oauth2.example/token',
+    });
+    assert.equal(calls[0].url, 'https://oauth2.example/token');
+    assert.equal(calls[0].options.body.get('grant_type'), 'refresh_token');
+    assert.equal(calls[0].options.body.get('refresh_token'), 'adc-refresh');
+    assert.equal(token.access_token, 'adc-access');
+    assert.equal(token.refresh_token, 'adc-refresh');
+    assert.equal(token.expires_in, 123);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test('builds AGY Google OAuth URL for direct login', () => {

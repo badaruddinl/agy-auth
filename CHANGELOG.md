@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.21 - 2026-07-07
+
+### Fixed
+
+- `agy-authx login --cloud-project` now follows AGY's Application Default Credentials flow instead of using the consumer OAuth browser flow.
+- Cloud Project login now reads ADC from `GOOGLE_APPLICATION_CREDENTIALS` or the gcloud ADC file, refreshes the ADC token, and saves the quota project in the AGY credential.
+
 ## 0.1.20 - 2026-07-07
 
 ### Fixed

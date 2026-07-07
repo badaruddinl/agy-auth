@@ -42,7 +42,7 @@ By default, `agy-authx login` saves the new account and preserves the previously
 
 ```bash
 agy-authx login --alias main          # Google OAuth login
-agy-authx login --cloud-project       # Google Cloud project login
+agy-authx login --cloud-project       # Google Cloud ADC project login
 agy-authx login --activate --alias x  # save and activate the new session
 agy-authx list                        # compact account table
 agy-authx list --refresh              # refresh quota data first
