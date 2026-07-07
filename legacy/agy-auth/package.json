@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-auth",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Compatibility bridge package for @badaruddinl/agy-authx.",
   "type": "module",
   "bin": {
@@ -30,7 +30,7 @@
   },
   "homepage": "https://github.com/badaruddinl/agy-authx#readme",
   "dependencies": {
-    "@badaruddinl/agy-authx": "^0.1.23"
+    "@badaruddinl/agy-authx": "^0.1.24"
   },
   "engines": {
     "node": ">=18"

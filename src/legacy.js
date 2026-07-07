@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 
 export const LEGACY_PACKAGE = '@badaruddinl/agy-auth';
 export const AUTHX_PACKAGE = '@badaruddinl/agy-authx';
-export const MAX_MANAGED_LEGACY_VERSION = '0.1.23';
+export const MAX_MANAGED_LEGACY_VERSION = '0.1.24';
 
 const execFileAsync = promisify(execFile);
 

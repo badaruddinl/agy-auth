@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.24 - 2026-07-07
+
+### Fixed
+
+- Fixed AGY OAuth client secret extraction when multiple `GOCSPX-` secrets and the token URL are embedded without separators in the AGY binary.
+
 ## 0.1.23 - 2026-07-07
 
 ### Fixed

@@ -525,7 +525,7 @@ export async function resolveGoogleOAuthConfig() {
     const binary = await fs.readFile(executable);
     const text = binary.toString('latin1');
     const clientIds = [...new Set(text.match(/\d+-[a-z0-9]+\.apps\.googleusercontent\.com/gi) || [])];
-    const clientSecrets = [...new Set(text.match(/GOCSPX-[A-Za-z0-9_-]{12,}/g) || [])];
+    const clientSecrets = extractGoogleOAuthClientSecrets(text);
     if (!clientIds[0] || !clientSecrets.length) {
       throw new Error(`AGY Google OAuth client config was not detected in ${executable}.`);
     }
@@ -538,6 +538,25 @@ export async function resolveGoogleOAuthConfig() {
     if (error?.message?.includes('AGY Google OAuth client config')) throw error;
     throw new Error(`Failed to read AGY OAuth config from ${executable}: ${error.message}`);
   }
+}
+
+function extractGoogleOAuthClientSecrets(text) {
+  const secrets = [];
+  const matches = [...text.matchAll(/GOCSPX-/g)];
+  for (const [index, match] of matches.entries()) {
+    const start = match.index;
+    let end = start;
+    while (end < text.length && /[A-Za-z0-9_-]/.test(text[end])) end += 1;
+
+    const nextSecretStart = matches[index + 1]?.index;
+    if (nextSecretStart && nextSecretStart > start && nextSecretStart < end) end = nextSecretStart;
+
+    const rawCandidate = text.slice(start, end);
+    const urlMarker = rawCandidate.search(/https?/);
+    const candidate = urlMarker > 0 ? rawCandidate.slice(0, urlMarker) : rawCandidate;
+    if (candidate.length >= 20) secrets.push(candidate);
+  }
+  return [...new Set(secrets.reverse())];
 }
 
 function resolveAgyExecutable() {
@@ -717,6 +736,7 @@ export const internals = {
   extractEmailFromIdToken,
   extractAuthorizationCode,
   extractGoogleAuthUrl,
+  extractGoogleOAuthClientSecrets,
   extractOAuthCallbackCode,
   extractUrlFromOscPayload,
   exchangeOAuthCode,

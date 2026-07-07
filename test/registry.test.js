@@ -23,7 +23,7 @@ test('extracts latest AGY account email from logs', () => {
 test('agy-authx package owns only the agy-authx command', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.23');
+  assert.equal(packageJson.version, '0.1.24');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
   });
@@ -35,7 +35,7 @@ test('agy-auth bridge owns only the agy-auth command and installs agy-authx', as
   assert.deepEqual(packageJson.bin, {
     'agy-auth': 'bin/agy-auth.js',
   });
-  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.23');
+  assert.equal(packageJson.dependencies['@badaruddinl/agy-authx'], '^0.1.24');
 });
 
 test('legacy bridge parser recognizes managed legacy bridge versions', () => {
@@ -51,17 +51,17 @@ test('legacy bridge parser recognizes managed legacy bridge versions', () => {
   assert.equal(parsed.version, '0.1.16');
   assert.equal(parsed.managedBridge, true);
   assert.equal(legacyInternals.isManagedLegacyVersion('0.1.17'), true);
-  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.23'), true);
-  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.24'), false);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.24'), true);
+  assert.equal(legacyInternals.isManagedLegacyVersion('0.1.25'), false);
 });
 
 test('legacy bridge guard refuses to modify unmanaged versions', () => {
   assert.throws(
     () => legacyInternals.assertManagedLegacyBridge({
       installed: true,
-      version: '0.1.24',
+      version: '0.1.25',
     }),
-    /Only @badaruddinl\/agy-auth versions <= 0\.1\.23 are managed/,
+    /Only @badaruddinl\/agy-auth versions <= 0\.1\.24 are managed/,
   );
 });
 
@@ -74,7 +74,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
         stdout: JSON.stringify({
           dependencies: {
             '@badaruddinl/agy-auth': {
-              version: '0.1.23',
+              version: '0.1.24',
             },
           },
         }),
@@ -86,7 +86,7 @@ test('legacy enabled removes verified bridge before installing agy-auth bridge',
 
   const lines = [];
   const code = await runLegacyCommand(['enabled'], {
-    authxVersion: '0.1.23',
+    authxVersion: '0.1.24',
     runner,
     output: line => lines.push(line),
   });
@@ -252,6 +252,13 @@ test('exchanges OAuth code with the full AGY client secret', async () => {
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test('trims OAuth client secret before an adjacent URL marker', () => {
+  const staleSecret = `GOCSPX-${'a'.repeat(28)}`;
+  const activeSecret = `GOCSPX-${'b'.repeat(28)}`;
+  const binaryText = `before${staleSecret}${activeSecret}https://oauth2.googleapis.com/token after`;
+  assert.deepEqual(loginInternals.extractGoogleOAuthClientSecrets(binaryText), [activeSecret, staleSecret]);
 });
 
 test('extracts OAuth code from callback URL or pasted value', () => {
