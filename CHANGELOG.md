@@ -4,19 +4,17 @@ All notable changes to this project are documented here.
 
 ## Unreleased
 
+### Added
+
+- Added `agy-authx legacy status`, `agy-authx legacy disabled`, and `agy-authx legacy enabled`.
+- `legacy disabled` only uninstalls `@badaruddinl/agy-auth` after verifying the installed version is less than or equal to `0.1.17`.
+- `legacy enabled` removes that verified bridge package when present, then installs `@badaruddinl/agy-authx` so the `agy-auth` command is provided by the main package.
+
 ### Changed
 
 - Prefer `agy-authx legacy enabled` and `agy-authx legacy disabled` for legacy command management.
 - Keep `enable` and `disable` as aliases for the state-based commands.
 - Manage only `@badaruddinl/agy-auth` versions less than or equal to `0.1.17`; newer versions are refused.
-
-## 0.1.19 - 2026-07-07
-
-### Added
-
-- Added `agy-authx legacy status`, `agy-authx legacy disable`, and `agy-authx legacy enable`.
-- `legacy disable` only uninstalls `@badaruddinl/agy-auth@0.1.17` after verifying the exact package and version.
-- `legacy enable` removes that verified bridge package when present, then installs `@badaruddinl/agy-authx` so the `agy-auth` command is provided by the main package.
 
 ## 0.1.18 - 2026-07-07
 
