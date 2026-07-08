@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here.
 
+## 0.1.28 - 2026-07-08
+
+### Fixed
+
+- Improved AGY local backend quota discovery for macOS by reading AGY process output in addition to log files.
+- Broadened AGY gRPC port detection across multiple backend log formats.
+- Added clearer quota refresh diagnostics, including the `AGY_AUTHX_AGY_GRPC_PORT` override hint when no backend port is detected.
+
 ## 0.1.27 - 2026-07-08
 
 ### Fixed

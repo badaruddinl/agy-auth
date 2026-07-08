@@ -74,6 +74,12 @@ agy-authx remove main
 
 `agy-authx list` adapts to narrow terminals, keeps each account on one row, and highlights the selected active account when color output is available.
 
+`agy-authx list --refresh` reads quota from the local AGY backend. If a platform-specific AGY build prints the backend port in a format `agy-authx` cannot detect yet, rerun with:
+
+```bash
+AGY_AUTHX_AGY_GRPC_PORT=49331 agy-authx list --refresh
+```
+
 The first column in `agy-authx list` is a selectable id. You can use it anywhere a query is accepted:
 
 ```bash

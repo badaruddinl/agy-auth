@@ -24,7 +24,7 @@ test('extracts latest AGY account email from logs', () => {
 test('agy-authx package owns only the agy-authx command', async () => {
   const packageJson = JSON.parse(await fs.readFile(path.join(process.cwd(), 'package.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.1.27');
+  assert.equal(packageJson.version, '0.1.28');
   assert.deepEqual(packageJson.bin, {
     'agy-authx': 'bin/agy-authx.js',
   });
@@ -483,6 +483,17 @@ test('parses AGY local quota summary protobuf', () => {
   assert.equal(usage.groups[0].fiveHour.remainingPercent, 100);
   assert.equal(usage.groups[1].name, 'Claude And Gpt Models');
   assert.equal(usage.groups[1].weekly.remainingPercent, 66);
+});
+
+test('extracts AGY gRPC ports from multiple log formats', () => {
+  const text = `
+    server listening on port at 49221 for HTTPS (gRPC)
+    mac backend: gRPC server listening on 127.0.0.1:49331
+    https://127.0.0.1:49441/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary
+    endpoint port 49551 for grpc quota service
+  `;
+
+  assert.deepEqual(usageInternals.extractAgyGrpcPorts(text), [49221, 49331, 49441, 49551]);
 });
 
 test('parses AGY usage account when TUI headings touch the email', () => {

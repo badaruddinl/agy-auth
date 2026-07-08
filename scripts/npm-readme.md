@@ -82,6 +82,8 @@ agy-authx legacy enabled              # enable agy-auth through the bridge packa
 agy-authx remove main                 # remove one saved session
 ```
 
+`agy-authx list --refresh` reads quota from the local AGY backend. If AGY prints a backend port that is not detected automatically, rerun with `AGY_AUTHX_AGY_GRPC_PORT=<port>`.
+
 The active account is highlighted in `agy-authx list` when your terminal supports color.
 
 ## Platform Notes

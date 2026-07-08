@@ -66,17 +66,27 @@ export function parseUsageOutput(output) {
 }
 
 export async function readUsageFromAgy({ timeoutMs = 30000 } = {}) {
-  const startedAt = Date.now();
   const logSnapshot = await snapshotAgyLogs();
+  let processOutput = '';
   const backend = spawnAgyProcess([], {
     env: { ...process.env, TERM: process.env.TERM || 'xterm-256color' },
   });
+  backend.onData(data => {
+    processOutput = `${processOutput}${stripTerminal(data)}`.slice(-30000);
+  });
 
   try {
-    const { usage, errors } = await waitForQuotaSummary(logSnapshot, Math.max(timeoutMs, 45000));
+    const { usage, errors, sawPort } = await waitForQuotaSummary({
+      logSnapshot,
+      processOutput: () => processOutput,
+      timeoutMs: Math.max(timeoutMs, 45000),
+    });
     if (usage) return usage;
     const detail = errors.length ? ` Tried AGY ports: ${errors.join('; ')}` : '';
-    throw new Error(`Unable to read AGY quota summary from the local AGY backend.${detail}`);
+    const hint = sawPort
+      ? ''
+      : ' No AGY gRPC port was detected from AGY output/logs. Run `agy-authx doctor`, or retry with `AGY_AUTHX_AGY_GRPC_PORT=<port>` if AGY printed a backend port.';
+    throw new Error(`Unable to read AGY quota summary from the local AGY backend.${hint}${detail}`);
   } finally {
     try {
       backend.kill();
@@ -86,11 +96,13 @@ export async function readUsageFromAgy({ timeoutMs = 30000 } = {}) {
   }
 }
 
-async function waitForQuotaSummary(logSnapshot, timeoutMs) {
+async function waitForQuotaSummary({ logSnapshot, processOutput, timeoutMs }) {
   const startedAt = Date.now();
   const errors = [];
+  let sawPort = false;
   while (Date.now() - startedAt < timeoutMs) {
-    const ports = await findAgyGrpcPorts(logSnapshot);
+    const ports = await findAgyGrpcPorts(logSnapshot, processOutput());
+    if (ports.length > 0) sawPort = true;
     for (const port of ports) {
       try {
         const payload = await readQuotaSummaryFromPort(port, Math.min(5000, timeoutMs));
@@ -106,25 +118,43 @@ async function waitForQuotaSummary(logSnapshot, timeoutMs) {
     }
     await delay(500);
   }
-  return { usage: null, errors: [...new Set(errors)].slice(-12) };
+  return { usage: null, errors: [...new Set(errors)].slice(-12), sawPort };
 }
 
-async function findAgyGrpcPorts(logSnapshot) {
+async function findAgyGrpcPorts(logSnapshot, processText = '') {
   const envPort = Number(process.env.AGY_AUTHX_AGY_GRPC_PORT || '');
   if (Number.isInteger(envPort) && envPort > 0) return [envPort];
 
   const candidates = [];
   const logs = await readAgyLogsAfterSnapshot(logSnapshot);
-  for (const match of logs.matchAll(/port at\s+(\d+)\s+for HTTPS \(gRPC\)/gi)) {
-    candidates.push(Number(match[1]));
-  }
+  candidates.push(...extractAgyGrpcPorts(`${processText}\n${logs}`));
   if (candidates.length === 0) {
     const fallbackLogs = await readRecentAgyLogs();
-    for (const match of fallbackLogs.matchAll(/port at\s+(\d+)\s+for HTTPS \(gRPC\)/gi)) {
-      candidates.push(Number(match[1]));
-    }
+    candidates.push(...extractAgyGrpcPorts(fallbackLogs));
   }
   return [...new Set(candidates.reverse().filter(port => Number.isInteger(port) && port > 0))].slice(0, 8);
+}
+
+function extractAgyGrpcPorts(text) {
+  const candidates = [];
+  const patterns = [
+    /port at\s+(\d{2,5})\s+for\s+HTTPS\s+\(gRPC\)/gi,
+    /(?:gRPC|grpc)[^\n\r]{0,120}?(?:port|listen(?:ing)?|server|endpoint)[^\d\n\r]{0,40}(\d{2,5})/gi,
+    /(?:port|listen(?:ing)?|server|endpoint)[^\d\n\r]{0,40}(\d{2,5})[^\n\r]{0,120}?(?:gRPC|grpc)/gi,
+    /(?:port|listen(?:ing)?|server|endpoint)[^\n\r]{0,120}?(?:gRPC|grpc)[^\d\n\r]{0,40}(\d{2,5})/gi,
+    /https:\/\/(?:127\.0\.0\.1|localhost):(\d{2,5})[^\s\n\r]*(?:grpc|RetrieveUserQuota|LanguageServerService)?/gi,
+    /(?:127\.0\.0\.1|localhost):(\d{2,5})/gi,
+  ];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    for (const pattern of patterns) {
+      pattern.lastIndex = 0;
+      for (const match of line.matchAll(pattern)) {
+        const port = [...match].slice(1).find(value => /^\d+$/.test(String(value || '')));
+        if (port) candidates.push(Number(port));
+      }
+    }
+  }
+  return [...new Set(candidates.filter(port => port >= 1024 && port <= 65535))];
 }
 
 async function snapshotAgyLogs() {
@@ -261,6 +291,9 @@ function readQuotaSummaryFromPort(port, timeoutMs) {
       ':path': '/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary',
       'content-type': 'application/grpc',
       te: 'trailers',
+    });
+    request.setTimeout(timeoutMs, () => {
+      finish(new Error('request timed out'));
     });
     request.on('response', headers => {
       if (headers[':status'] !== 200) {
@@ -426,6 +459,7 @@ function formatDurationUntil(seconds, capturedAt) {
 
 export const internals = {
   decodeGrpcMessages,
+  extractAgyGrpcPorts,
   formatDurationUntil,
   parseProtoFields,
   parseQuotaSummary,

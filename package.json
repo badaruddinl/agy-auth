@@ -1,6 +1,6 @@
 {
   "name": "@badaruddinl/agy-authx",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "agy-authx local Google Antigravity session manager for the agy CLI and App.",
   "type": "module",
   "bin": {
