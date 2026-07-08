@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { extractAccountEmail } from '../src/agy.js';
+import { getAgyInstallCommand, getAgyInstallInstructions } from '../src/agy-install.js';
 import { internals as loginInternals } from '../src/agy-login.js';
 import { internals, run } from '../src/cli.js';
 import { formatLastRefresh, formatResetAt, formatUsageColumns, parseRefreshDuration, printAccounts } from '../src/format.js';
@@ -125,6 +126,14 @@ test('parses login alias', () => {
 
 test('agy-authx login is a local session manager command', () => {
   assert.equal(typeof internals.parseAlias, 'function');
+});
+
+test('AGY setup commands use official installer URLs', () => {
+  const command = getAgyInstallCommand({ shell: process.platform === 'win32' ? 'powershell' : 'sh' });
+  const instructions = getAgyInstallInstructions();
+
+  assert.match(command, /https:\/\/antigravity\.google\/cli\/install\.(ps1|sh)/);
+  assert.match(instructions.docsUrl, /antigravity\.google\/docs\/cli-install/);
 });
 
 test('login uses foreground AGY by default', () => {

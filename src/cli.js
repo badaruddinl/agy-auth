@@ -1,6 +1,7 @@
 import { VERSION, AGY_ACCOUNT, AGY_SERVICE, REGISTRY_PATH } from './constants.js';
 import { detectActiveAccount } from './agy.js';
 import { printAccounts, printJson } from './format.js';
+import { getAgyInstallInstructions, getAgyStatus, installAgy, resolveAgyExecutable } from './agy-install.js';
 import { maskOAuthSecret, resolveGoogleOAuthConfig, runAgyLogin } from './agy-login.js';
 import { readUsageFromAgy } from './usage.js';
 import { runLegacyCommand } from './legacy.js';
@@ -22,6 +23,9 @@ function help() {
   console.log('Local Google Antigravity session manager for agy CLI/App.');
   console.log('');
   console.log('Commands:');
+  console.log('  doctor                  Check agy-authx, AGY CLI path, and setup status');
+  console.log('  setup-agy               Install AGY CLI using the official installer');
+  console.log('  agy install             Alias for setup-agy');
   console.log('  status                  Show active AGY account and registry status');
   console.log('  login [--alias name]    Run AGY sign-in, then save the resulting session');
   console.log('  login --oauth           Use Google OAuth login method (default)');
@@ -45,6 +49,31 @@ function help() {
   console.log('');
   console.log('Install: npm install -g @badaruddinl/agy-authx');
   console.log('Run: agy-authx <command>');
+}
+
+function printAgyMissing({ command = 'agy-authx setup-agy' } = {}) {
+  const install = getAgyInstallInstructions();
+  console.log('AGY CLI was not found on PATH.');
+  console.log(`Install it with: ${command}`);
+  console.log(`Official installer command: ${install.command}`);
+  console.log(`Expected install path: ${install.pathHint}`);
+  console.log(`Docs: ${install.docsUrl}`);
+}
+
+function requireAgyExecutable(jsonMode) {
+  const agyPath = resolveAgyExecutable();
+  if (agyPath) return agyPath;
+  if (jsonMode) {
+    printJson({
+      ok: false,
+      error: 'AGY CLI was not found on PATH.',
+      installCommand: 'agy-authx setup-agy',
+      officialInstaller: getAgyInstallInstructions(),
+    });
+  } else {
+    printAgyMissing();
+  }
+  return '';
 }
 
 function parseAlias(args) {
@@ -264,6 +293,7 @@ async function captureCurrentAccount(args, emailOverride = '') {
 }
 
 async function login(args, jsonMode) {
+  if (!requireAgyExecutable(jsonMode)) return 1;
   if (args.includes('--device-auth')) {
     const payload = {
       ok: false,
@@ -466,6 +496,7 @@ async function readListRegistry() {
 }
 
 async function list(jsonMode, refresh = false) {
+  if (refresh && !requireAgyExecutable(jsonMode)) return 1;
   if (refresh) await refreshAllUsage();
   const registry = await readListRegistry();
   if (jsonMode) printJson(registry);
@@ -474,6 +505,7 @@ async function list(jsonMode, refresh = false) {
 }
 
 async function usage(jsonMode) {
+  if (!requireAgyExecutable(jsonMode)) return 1;
   const registry = await readRegistry();
   await ensureSelectedSessionActive(registry);
   const usagePayload = await refreshActiveUsage();
@@ -495,6 +527,7 @@ async function usage(jsonMode) {
 }
 
 async function oauthConfig(jsonMode) {
+  if (!requireAgyExecutable(jsonMode)) return 1;
   const config = await resolveGoogleOAuthConfig();
   const payload = {
     clientId: config.clientId,
@@ -606,6 +639,7 @@ async function setAlias(args, jsonMode) {
 }
 
 async function verify(jsonMode) {
+  if (!requireAgyExecutable(jsonMode)) return 1;
   const registry = await readRegistry();
   const sync = await ensureSelectedSessionActive(registry);
   const activeAccount = sync.activeAccount;
@@ -695,6 +729,58 @@ async function remove(args, jsonMode) {
   return 0;
 }
 
+async function doctor(jsonMode) {
+  const agy = getAgyStatus();
+  const registry = await readRegistry().catch(error => ({
+    error: error.message,
+    accounts: [],
+    activeAccountKey: null,
+  }));
+  const payload = {
+    ok: agy.installed,
+    version: VERSION,
+    command: 'agy-authx',
+    agy,
+    registryPath: REGISTRY_PATH,
+    savedAccounts: registry.accounts?.length || 0,
+    activeAccountKey: registry.activeAccountKey || null,
+  };
+  if (jsonMode) {
+    printJson(payload);
+  } else {
+    console.log(`agy-authx: ${VERSION}`);
+    console.log(`platform : ${agy.platform}`);
+    console.log(`agy path : ${agy.path || '-'}`);
+    console.log(`agy ver  : ${agy.version || '-'}`);
+    console.log(`registry : ${REGISTRY_PATH}`);
+    console.log(`accounts : ${payload.savedAccounts}`);
+    if (!agy.installed) {
+      console.log('');
+      printAgyMissing();
+    }
+  }
+  return agy.installed ? 0 : 1;
+}
+
+async function setupAgy(jsonMode) {
+  const result = await installAgy({ output: line => {
+    if (!jsonMode) console.log(line);
+  } });
+  if (jsonMode) printJson(result);
+  else if (result.alreadyInstalled) {
+    console.log(`AGY CLI already installed: ${result.path}`);
+    if (result.version) console.log(`AGY version: ${result.version}`);
+  } else if (result.ok) {
+    console.log(`AGY CLI installed: ${result.path}`);
+    if (result.version) console.log(`AGY version: ${result.version}`);
+  } else {
+    console.log('AGY CLI installer finished, but `agy` was still not found on PATH.');
+    console.log(`Expected install path: ${getAgyInstallInstructions().pathHint}`);
+    console.log('Restart your terminal or add the install path to PATH, then run `agy-authx doctor`.');
+  }
+  return result.ok ? 0 : 1;
+}
+
 export async function run(argv) {
   const args = [...argv];
   const jsonMode = args.includes('--json');
@@ -702,6 +788,18 @@ export async function run(argv) {
   const filtered = args.filter(arg => arg !== '--json' && arg !== '--refresh');
   const command = filtered[0] || 'help';
   const rest = filtered.slice(1);
+
+  if (!filtered[0] && !resolveAgyExecutable()) {
+    console.log(`agy-authx ${VERSION}`);
+    console.log('');
+    printAgyMissing();
+    console.log('');
+    console.log('Useful commands:');
+    console.log('  agy-authx doctor');
+    console.log('  agy-authx setup-agy');
+    console.log('  agy-authx agy install');
+    return 1;
+  }
 
   if (command === 'help' || command === '--help' || command === '-h') {
     help();
@@ -712,6 +810,9 @@ export async function run(argv) {
     return 0;
   }
   if (command === 'status') return status(jsonMode);
+  if (command === 'doctor') return doctor(jsonMode);
+  if (command === 'setup-agy') return setupAgy(jsonMode);
+  if (command === 'agy' && rest[0] === 'install') return setupAgy(jsonMode);
   if (command === 'login') return login(rest, jsonMode);
   if (command === 'list') return list(jsonMode, refresh);
   if (command === 'usage') return usage(jsonMode);
@@ -733,6 +834,7 @@ export const internals = {
   parseAlias,
   parseCloudLocation,
   parseCloudProject,
+  requireAgyExecutable,
   parseLoginMethod,
   parseSetAliasArgs,
   sameEmail,

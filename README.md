@@ -12,6 +12,26 @@ npm install -g @badaruddinl/agy-authx
 
 The package has no npm runtime dependencies and no compiled addon install step.
 
+`agy-authx` manages sessions for the Google Antigravity `agy` CLI, so the `agy` binary must be available on `PATH` for login, usage refresh, and verification commands. Check your setup with:
+
+```bash
+agy-authx doctor
+```
+
+If `agy` is not installed, install it explicitly with the official Google Antigravity installer:
+
+```bash
+agy-authx setup-agy
+```
+
+or:
+
+```bash
+agy-authx agy install
+```
+
+The npm install step intentionally does not auto-install AGY. The setup commands are opt-in so global npm installs stay clean and predictable.
+
 Installing `@badaruddinl/agy-authx` exposes the new command:
 
 ```bash
@@ -28,6 +48,9 @@ Use one runtime consistently:
 
 ```bash
 agy-authx status
+agy-authx doctor
+agy-authx setup-agy
+agy-authx agy install
 agy-authx login --alias main
 agy-authx login --oauth --alias main
 agy-authx login --cloud-project --project my-gcp-project --alias main

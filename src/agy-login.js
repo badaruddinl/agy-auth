@@ -1,10 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { detectActiveAccountSince, readAgyLogsSince } from './agy.js';
+import { resolveAgyExecutable } from './agy-install.js';
 import { spawnAgyForeground, spawnAgyProcess } from './agy-process.js';
 import { APP_DIR } from './constants.js';
 import { KeyringError, readAgyCredential, writeAgyCredential } from './keyring.js';
@@ -557,19 +558,6 @@ function extractGoogleOAuthClientSecrets(text) {
     if (candidate.length >= 20) secrets.push(candidate);
   }
   return [...new Set(secrets.reverse())];
-}
-
-function resolveAgyExecutable() {
-  const command = process.platform === 'win32' ? 'where.exe' : 'which';
-  const result = spawnSync(command, ['agy'], {
-    encoding: 'utf8',
-    windowsHide: true,
-  });
-  if (result.status !== 0) return '';
-  return String(result.stdout || '')
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .find(Boolean) || '';
 }
 
 export function maskOAuthSecret(value) {
